@@ -62,10 +62,50 @@ date de démarrage concordante) pour résister au recyclage de PID par Windows.
 | Points d'arrêt | `set_breakpoint`, `list_breakpoints`, `clear_breakpoints` |
 | Inspection | `evaluate`, `get_locals`, `get_stack` |
 | Sorties | `list_output_panes`, `get_output_pane` |
+| Sélection | `get_selection`, `take_pending_context` |
 
 Les opérations longues (build, exécution) prennent un `wait_ms`. Au-delà, la réponse a le statut
 `running` : **ce n'est pas une erreur**, c'est un état à ré-interroger avec `build_status` ou
 `debug_state`. Le plafond serveur est de 120 s pour rester sous le timeout du client MCP.
+
+## Envoyer une sélection depuis Visual Studio
+
+Dans l'éditeur (`Ctrl+Alt+Maj+C` ou clic droit) et dans le menu contextuel de la fenêtre Sortie :
+**« Envoyer à Claude Code »**. La sélection est figée au moment du clic — c'est le point important,
+car entre le moment où tu sélectionnes et celui où tu formules ta demande, la sélection a souvent
+déjà changé.
+
+Deux chemins selon l'état de la connexion :
+
+- **Claude Code connecté à l'IDE** (`/ide` dans le terminal) → la sélection est poussée
+  directement dans le prompt sous forme de @-mention.
+- **Sinon** → elle est mise en file, et Claude la récupère avec `take_pending_context`.
+
+Sans rien envoyer du tout, `get_selection` lit la sélection courante à la demande.
+
+### Comment fonctionne le push
+
+Claude Code expose un protocole d'intégration IDE : l'extension ouvre un serveur WebSocket,
+dépose `~/.claude/ide/<port>.lock` décrivant le port, l'`authToken` et les `workspaceFolders`,
+et Claude Code s'y connecte. Par-dessus, c'est le même JSON-RPC que le pont HTTP — le
+`McpDispatcher` est réutilisé tel quel — plus deux notifications que l'IDE peut pousser :
+`at_mentioned` et `selection_changed`.
+
+**Ce protocole est interne à Claude Code et non documenté publiquement.** Il a été reproduit
+depuis l'extension Visual Studio Code officielle et peut changer sans préavis. S'il casse, le
+pont HTTP continue de fonctionner et seul le push est perdu.
+
+Deux conséquences concrètes de sa conception :
+
+- `at_mentioned` ne transporte **pas de texte**, seulement `{filePath, lineStart, lineEnd}` :
+  Claude relit le fichier. Une portion de console est donc d'abord écrite dans
+  `%TEMP%\claude-vs-mcp\snippets\`, puis mentionnée.
+- Les lignes y sont **0-based** alors qu'EnvDTE compte à partir de 1.
+
+Claude Code associe une session à un IDE via `workspaceFolders`, republié à chaque changement de
+solution. Si l'association automatique échoue — le terminal n'étant pas un processus enfant de
+`devenv`, contrairement au terminal intégré de VS Code — `/ide` permet de choisir l'instance à la
+main.
 
 ## Sécurité
 

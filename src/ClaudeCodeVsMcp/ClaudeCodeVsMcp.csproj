@@ -18,6 +18,12 @@
     <TargetFrameworkVersion>v4.7.2</TargetFrameworkVersion>
     <RestoreProjectStyle>PackageReference</RestoreProjectStyle>
     <GeneratePkgDefFile>true</GeneratePkgDefFile>
+    <!-- Sans cela, le .pkgdef ne declare que "Assembly" (nom fort) : la CLR cherche alors
+         l'assembly dans les chemins de sondage de devenv.exe, ou elle n'est pas, puisqu'elle
+         vit dans le dossier Extensions. Resultat : le package se charge puis echoue sur un
+         FileNotFoundException. RegisterWithCodebase fait emettre
+         "CodeBase"="$PackageFolder$\ClaudeCodeVsMcp.dll", qui resout sans ambiguite. -->
+    <RegisterWithCodebase>true</RegisterWithCodebase>
     <CreateVsixContainer>true</CreateVsixContainer>
     <IncludeAssemblyInVSIXContainer>true</IncludeAssemblyInVSIXContainer>
     <IncludeDebugSymbolsInVSIXContainer>false</IncludeDebugSymbolsInVSIXContainer>
@@ -84,6 +90,14 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- Compile la table de commandes et l'embarque sous le nom de ressource attendu par
+         ProvideMenuResource sur le package. -->
+    <VSCTCompile Include="ClaudeCodeVsMcpPackage.vsct">
+      <ResourceName>Menus.ctmenu</ResourceName>
+    </VSCTCompile>
+  </ItemGroup>
+
+  <ItemGroup>
     <PackageReference Include="Microsoft.VisualStudio.SDK" Version="17.14.40265">
       <ExcludeAssets>runtime</ExcludeAssets>
       <IncludeAssets>compile; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
@@ -102,4 +116,10 @@
   </ItemGroup>
 
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
+
+  <!-- Targets VSIX (generation du .pkgdef, du manifeste et du conteneur .vsix).
+       Microsoft.VSSDK.BuildTools.targets, importe automatiquement par NuGet, n'est qu'un shim :
+       il definit VSToolsPath mais n'importe PAS les targets de packaging. Sans cet import
+       explicite, le projet compile normalement et ne produit aucun .vsix. -->
+  <Import Project="$(VSToolsPath)\VSSDK\Microsoft.VsSDK.targets" Condition="'$(VSToolsPath)' != ''" />
 </Project>

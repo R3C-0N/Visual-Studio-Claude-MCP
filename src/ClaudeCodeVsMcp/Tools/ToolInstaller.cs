@@ -28,6 +28,7 @@ namespace ClaudeCodeVsMcp.Tools
             DebugTools.Register(registry, debugWatcher, buildWatcher);
             InspectTools.Register(registry);
             OutputTools.Register(registry);
+            SelectionTools.Register(registry);
 
             registry.Add(
                 "server_info",

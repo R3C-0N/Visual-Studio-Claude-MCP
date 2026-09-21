@@ -4,7 +4,9 @@ using System.IO;
 using System.Runtime.InteropServices;
 using System.Threading;
 using System.Threading.Tasks;
+using ClaudeCodeVsMcp.Commands;
 using ClaudeCodeVsMcp.Discovery;
+using ClaudeCodeVsMcp.Ide;
 using ClaudeCodeVsMcp.Infrastructure;
 using ClaudeCodeVsMcp.Server;
 using ClaudeCodeVsMcp.Tools;
@@ -39,6 +41,7 @@ namespace ClaudeCodeVsMcp
     [Guid(PackageGuidString)]
     [ProvideAutoLoad(VSConstants.UICONTEXT.ShellInitialized_string, PackageAutoLoadFlags.BackgroundLoad)]
     [ProvideAutoLoad(VSConstants.UICONTEXT.SolutionExists_string, PackageAutoLoadFlags.BackgroundLoad)]
+    [ProvideMenuResource("Menus.ctmenu", 1)]
     public sealed class ClaudeCodeVsMcpPackage : AsyncPackage
     {
         public const string PackageGuidString = "23677659-B917-4169-8644-FEB1608590A3";
@@ -55,6 +58,7 @@ namespace ClaudeCodeVsMcp
 
         private DTE2 _dte;
         private McpHttpServer _server;
+        private IdeBridge _ideBridge;
         private Timer _heartbeat;
         private DateTime _processStartUtc;
 
@@ -111,6 +115,14 @@ namespace ClaudeCodeVsMcp
             PublishInstance();
             _heartbeat = new Timer(_ => PublishInstance(), null, HeartbeatInterval, HeartbeatInterval);
 
+            // Second transport : WebSocket, seul moyen de POUSSER vers Claude Code.
+            // Son echec n'est pas fatal, le pont HTTP reste pleinement fonctionnel.
+            _ideBridge = new IdeBridge(dispatcher);
+            ClaudeSender.Bridge = _ideBridge;
+            _ideBridge.Start(Process.GetCurrentProcess().Id, IdeName, await GetWorkspaceFoldersAsync());
+
+            await SendToClaudeCommand.InitializeAsync(this);
+
             LogRegistrationHelp();
         }
 
@@ -128,8 +140,17 @@ namespace ClaudeCodeVsMcp
 
         private void OnSolutionChanged()
         {
-            // Declenche sur le thread UI : on se contente de republier l'entree du registre.
+            // Declenche sur le thread UI : on republie le registre d'instances et, pour l'IDE,
+            // le lockfile, dont workspaceFolders sert a Claude Code pour choisir la bonne session.
             PublishInstance();
+
+            if (_ideBridge == null) return;
+
+            JoinableTaskFactory.RunAsync(async delegate
+            {
+                var folders = await GetWorkspaceFoldersAsync();
+                _ideBridge.UpdateWorkspace(Process.GetCurrentProcess().Id, IdeName, folders);
+            }).FileAndForget("claude-vs-mcp/update-ide-workspace");
         }
 
         /// <summary>
@@ -180,10 +201,35 @@ namespace ClaudeCodeVsMcp
             catch (Exception) { return string.Empty; }
         }
 
+        /// <summary>Nom affiche par Claude Code dans la liste des IDE joignables (/ide).</summary>
+        private string IdeName
+        {
+            get { return "Visual Studio"; }
+        }
+
+        /// <summary>
+        /// Repertoires que Claude Code compare a son repertoire de travail pour associer une
+        /// session a cet IDE : le dossier de la solution ouverte.
+        /// </summary>
+        private async Task<string[]> GetWorkspaceFoldersAsync()
+        {
+            await JoinableTaskFactory.SwitchToMainThreadAsync();
+            var solutionPath = DteProvider.SolutionPath;
+            await TaskScheduler.Default;
+
+            if (string.IsNullOrEmpty(solutionPath)) return new string[0];
+
+            var directory = Path.GetDirectoryName(solutionPath);
+            return string.IsNullOrEmpty(directory) ? new string[0] : new[] { directory };
+        }
+
         private JObject DescribeServer()
         {
             return new JObject
             {
+                ["idePort"] = _ideBridge?.Port ?? 0,
+                ["ideConnected"] = _ideBridge?.IsConnected ?? false,
+                ["pendingSelections"] = ClaudeSender.PendingCount,
                 ["instancePort"] = _server?.InstancePort ?? 0,
                 ["hubPort"] = _server?.HubPort ?? 0,
                 ["isHub"] = _server?.IsHub ?? false,
@@ -206,6 +252,12 @@ namespace ClaudeCodeVsMcp
             ExtensionLog.Info("Enregistrement dans Claude Code (une seule fois, quelle que soit l'instance) :");
             ExtensionLog.Info("  claude mcp add --transport http visual-studio " + url +
                               " --header \"Authorization: Bearer " + TokenStore.GetOrCreate() + "\"");
+
+            if (_ideBridge != null && _ideBridge.Port != 0)
+            {
+                ExtensionLog.Info("Integration IDE active (port " + _ideBridge.Port + "). Taper /ide dans " +
+                                  "Claude Code pour s'y connecter et activer l'envoi depuis l'editeur.");
+            }
         }
 
         protected override void Dispose(bool disposing)
@@ -226,6 +278,7 @@ namespace ClaudeCodeVsMcp
                 }
                 catch (Exception) { }
 
+                try { _ideBridge?.Dispose(); } catch (Exception) { }
                 try { _server?.Dispose(); } catch (Exception) { }
                 try { _buildWatcher.Dispose(); } catch (Exception) { }
                 try { _debugWatcher.Dispose(); } catch (Exception) { }

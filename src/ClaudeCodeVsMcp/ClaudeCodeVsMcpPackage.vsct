@@ -1,0 +1,63 @@
+<?xml version="1.0" encoding="utf-8"?>
+<CommandTable xmlns="http://schemas.microsoft.com/VisualStudio/2005-10-18/CommandTable" xmlns:xs="http://www.w3.org/2001/XMLSchema">
+
+  <Extern href="stdidcmd.h" />
+  <Extern href="vsshlids.h" />
+
+  <Commands package="guidClaudePackage">
+
+    <Groups>
+      <!-- Menu contextuel de l'editeur de code. -->
+      <Group guid="guidClaudeCmdSet" id="ClaudeEditorGroup" priority="0x0600">
+        <Parent guid="guidSHLMainMenu" id="IDM_VS_CTXT_CODEWIN" />
+      </Group>
+
+      <!-- Menu contextuel de la fenetre Sortie : c'est ce qui permet d'envoyer une portion
+           de console, le cas que le menu de l'editeur ne couvre pas. -->
+      <Group guid="guidClaudeCmdSet" id="ClaudeOutputGroup" priority="0x0600">
+        <Parent guid="guidSHLMainMenu" id="IDM_VS_CTXT_OUTPUTWINDOW" />
+      </Group>
+    </Groups>
+
+    <Buttons>
+      <Button guid="guidClaudeCmdSet" id="cmdidSendToClaude" priority="0x0100" type="Button">
+        <Parent guid="guidClaudeCmdSet" id="ClaudeEditorGroup" />
+        <CommandFlag>DefaultInvisible</CommandFlag>
+        <CommandFlag>DynamicVisibility</CommandFlag>
+        <Strings>
+          <ButtonText>Envoyer a Claude Code</ButtonText>
+          <CanonicalName>ClaudeCode.SendSelection</CanonicalName>
+        </Strings>
+      </Button>
+
+      <Button guid="guidClaudeCmdSet" id="cmdidSendOutputToClaude" priority="0x0100" type="Button">
+        <Parent guid="guidClaudeCmdSet" id="ClaudeOutputGroup" />
+        <CommandFlag>DefaultInvisible</CommandFlag>
+        <CommandFlag>DynamicVisibility</CommandFlag>
+        <Strings>
+          <ButtonText>Envoyer a Claude Code</ButtonText>
+          <CanonicalName>ClaudeCode.SendOutputSelection</CanonicalName>
+        </Strings>
+      </Button>
+    </Buttons>
+
+  </Commands>
+
+  <KeyBindings>
+    <!-- Ctrl+Alt+Shift+C : combinaison libre dans les profils Visual Studio par defaut. -->
+    <KeyBinding guid="guidClaudeCmdSet" id="cmdidSendToClaude"
+                editor="guidVSStd97" key1="C" mod1="Control Alt Shift" />
+  </KeyBindings>
+
+  <Symbols>
+    <GuidSymbol name="guidClaudePackage" value="{23677659-B917-4169-8644-FEB1608590A3}" />
+
+    <GuidSymbol name="guidClaudeCmdSet" value="{F7D83724-4AC7-4935-896D-167AD15219EC}">
+      <IDSymbol name="ClaudeEditorGroup" value="0x1020" />
+      <IDSymbol name="ClaudeOutputGroup" value="0x1021" />
+      <IDSymbol name="cmdidSendToClaude" value="0x0100" />
+      <IDSymbol name="cmdidSendOutputToClaude" value="0x0101" />
+    </GuidSymbol>
+  </Symbols>
+
+</CommandTable>

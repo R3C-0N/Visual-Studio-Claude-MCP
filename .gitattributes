@@ -1,0 +1,10 @@
+# Normalisation par defaut : git decide, l'arbre de travail suit la plateforme.
+* text=auto
+
+# Les hooks et scripts shell DOIVENT rester en LF. Extraits en CRLF, sh echoue sur
+# "#!/bin/sh\r" avec une erreur d'interpreteur, et le hook ne protege plus rien.
+.githooks/* text eol=lf
+*.sh        text eol=lf
+
+# Le VSIX est une archive : aucune conversion.
+*.vsix binary

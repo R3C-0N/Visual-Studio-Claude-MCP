@@ -1,293 +1,243 @@
-# Claude Code ↔ Visual Studio (pont MCP)
+# Claude Code ↔ Visual Studio
 
-Extension Visual Studio qui héberge un serveur MCP dans `devenv.exe`, pour que Claude Code
-puisse compiler, lire les erreurs, poser des points d'arrêt, piloter le débogueur et inspecter
-les variables — sans quitter l'IDE.
+Pilotez Visual Studio depuis Claude Code : compiler, lire les erreurs, poser des points d'arrêt,
+dérouler le débogueur pas à pas et inspecter les variables — sans quitter votre terminal.
 
-Cible : **Visual Studio 2022 (17.x) et 2026 (18.x)**, projets **C# / .NET**.
+L'extension héberge un serveur [MCP](https://modelcontextprotocol.io) dans Visual Studio et expose
+l'IDE comme un jeu d'outils que Claude Code peut appeler.
+
+**Visual Studio 2022 (17.x) et 2026 (18.x)** · projets **C# / .NET**
+
+---
+
+## Ce que ça change
+
+Sans l'extension, Claude Code édite des fichiers et lance `dotnet build` à l'aveugle. Avec, il
+travaille dans votre IDE :
+
+- « Compile et corrige les erreurs » → il compile, lit la liste d'erreurs structurée avec fichier,
+  ligne et colonne, corrige, recompile.
+- « Pose un point d'arrêt ligne 42 et dis-moi pourquoi `total` est négatif » → il pose le point,
+  lance le débogage, attend l'arrêt, lit les variables locales et la pile d'appels.
+- « Trace la valeur de `i` à chaque passage sans arrêter le programme » → il pose un tracepoint.
+- « Regarde ce que j'ai sélectionné » → il lit votre sélection dans l'éditeur ou la console.
+
+C'est le contrôle du débogueur qui fait la différence : aucun outil en ligne de commande ne le
+remplace.
+
+---
 
 ## Installation
 
+**1. Télécharger l'extension**
+
+Récupérez `ClaudeCodeVsMcp.vsix` depuis la
+[dernière release](https://github.com/R3C-0N/Visual-Studio-Claude-MCP/releases/latest).
+
+**2. Installer**
+
+Fermez Visual Studio, puis double-cliquez sur le `.vsix`.
+
+**3. Enregistrer le serveur auprès de Claude Code**
+
+Relancez Visual Studio et ouvrez une solution. Dans la fenêtre **Sortie**, choisissez
+**Claude MCP** dans la liste « Afficher la sortie à partir de ». La commande à copier s'y trouve,
+jeton compris :
+
+```
+claude mcp add --transport http visual-studio http://127.0.0.1:5230/mcp --header "Authorization: Bearer <votre-jeton>"
+```
+
+Le jeton est propre à votre machine et généré au premier lancement. Ajoutez `--scope user` pour
+rendre le serveur disponible depuis n'importe quel répertoire, et pas seulement celui où vous
+lancez la commande.
+
+**4. Vérifier**
+
 ```powershell
-pwsh tools\Build.ps1              # compile, produit le .vsix
-pwsh tools\Build.ps1 -Install     # installe (Visual Studio doit être fermé)
+claude mcp list        # visual-studio ... ✔ Connected
 ```
 
-Relancer Visual Studio, ouvrir une solution, puis vérifier dans la fenêtre **Sortie → Claude MCP** :
-le port d'écoute, le rôle de hub et la commande d'enregistrement y sont écrits au démarrage.
+C'est tout. Demandez à Claude de compiler votre solution pour valider.
 
-```powershell
-pwsh tools\Smoke-Test.ps1         # teste le serveur en HTTP brut, sans Claude Code
-pwsh tools\Register-McpServer.ps1 # enregistre le serveur auprès de Claude Code
-```
+---
 
-En développement, `F5` déploie dans la ruche expérimentale (`/rootsuffix Exp`) sans toucher à
-l'installation principale.
+## Outils disponibles
 
-## Architecture
-
-```
-Claude Code ──► http://127.0.0.1:5230/mcp   (URL statique, configurée une seule fois)
-                        │
-                 instance « hub »
-                        ├─ traite localement si la cible est elle-même
-                        └─ relaie en HTTP vers 127.0.0.1:<port d'instance>
-```
-
-Chaque instance de Visual Studio écoute **toujours** sur un port d'instance
-(plage `51234-51299`) et tente **en plus** de se lier au port hub `5230`. Le bind fait office
-d'élection : le système arbitre, il n'y a pas de course. Si l'instance hub se ferme, une autre
-reprend le rôle en moins de 10 s — **sans reconfiguration côté Claude Code**.
-
-Le registre `%TEMP%\claude-vs-mcp\instance-<pid>.json` publie pid, port et solution chargée.
-Les entrées orphelines sont purgées sur trois critères cumulés (processus vivant, nom `devenv`,
-date de démarrage concordante) pour résister au recyclage de PID par Windows.
-
-## Choisir l'instance à piloter
-
-- Une seule instance ouverte → rien à faire.
-- Plusieurs → `list_instances`, puis `use_instance` (la sélection reste valable pour la session),
-  ou bien le paramètre `instance` sur chaque appel.
-- En cas d'ambiguïté, les outils **refusent de deviner** et renvoient la liste des choix : un build
-  lancé dans la mauvaise solution coûte plus cher qu'une question.
-
-## Outils exposés
-
-| Groupe | Outils |
+| Domaine | Outils |
 |---|---|
-| Instances | `list_instances`, `use_instance`, `server_info` |
 | Solution | `solution_info`, `list_projects`, `open_file`, `set_startup_project`, `set_configuration` |
-| Build | `build`, `build_status`, `cancel_build`, `get_errors` |
+| Compilation | `build`, `build_status`, `cancel_build`, `get_errors` |
 | Débogueur | `debug_start`, `debug_stop`, `debug_pause`, `debug_continue`, `debug_step`, `debug_state` |
 | Points d'arrêt | `set_breakpoint`, `list_breakpoints`, `update_breakpoint`, `clear_breakpoints` |
 | Inspection | `evaluate`, `get_locals`, `get_stack` |
 | Sorties | `list_output_panes`, `get_output_pane` |
 | Sélection | `get_selection`, `take_pending_context` |
+| Instances | `list_instances`, `use_instance`, `server_info` |
 
-Les opérations longues (build, exécution) prennent un `wait_ms`. Au-delà, la réponse a le statut
-`running` : **ce n'est pas une erreur**, c'est un état à ré-interroger avec `build_status` ou
-`debug_state`. Le plafond serveur est de 120 s pour rester sous le timeout du client MCP.
+Les opérations longues — compilation, exécution — acceptent un `wait_ms`. Au-delà, la réponse porte
+le statut `running` : ce n'est pas une erreur mais un état à ré-interroger.
 
-## Variantes de points d'arrêt
+---
 
-`set_breakpoint` couvre quatre variantes, combinables entre elles :
+## Points d'arrêt
+
+`set_breakpoint` couvre cinq variantes, combinables entre elles :
 
 | Variante | Paramètre | Comportement |
 |---|---|---|
 | Ordinaire | — | interrompt l'exécution |
-| Conditionnel | `condition`, `condition_type` | déclenche si l'expression est vraie, ou quand sa valeur change |
-| Tracepoint | `message`, `also_break` | journalise dans le pane Débogage **sans** interrompre |
+| Conditionnel | `condition` | déclenche si l'expression est vraie, ou quand sa valeur change |
+| Tracepoint | `message` | journalise **sans** interrompre |
 | Temporaire | `temporary` | se supprime après son premier déclenchement |
-| Dépendant | `depends_on` | reste désactivé jusqu'à ce que le point d'arrêt indiqué soit atteint |
+| Dépendant | `depends_on` | reste désactivé jusqu'à ce qu'un autre point d'arrêt soit atteint |
 
-À quoi s'ajoutent `hit_count` avec `hit_count_mode` (`equal`, `greater_or_equal`, `multiple`) et
-`filter` pour restreindre à un thread ou un processus.
+S'y ajoutent `hit_count` avec son mode (`equal`, `greater_or_equal`, `multiple`) et `filter` pour
+restreindre à un thread.
 
-Le message d'un tracepoint accepte la syntaxe de Visual Studio : expressions entre accolades et
-pseudo-variables. Par exemple `"i = {i}, appelé par $CALLER sur le thread $TID"`.
+Le message d'un tracepoint accepte la syntaxe de Visual Studio — expressions entre accolades et
+pseudo-variables :
 
-Les points d'arrêt sont identifiés par `chemin:ligne`, format attendu par `depends_on`,
-`update_breakpoint` et retourné par `list_breakpoints`. EnvDTE ne fournit aucun identifiant
-stable, celui-ci est donc dérivé de l'emplacement.
+```
+i = {i}, appelé par $CALLER sur le thread $TID
+```
 
-**Ce qui est natif et ce qui est émulé.** Les tracepoints sont natifs : `Breakpoint2.Message`
-avec `BreakWhenHit = false` est exactement ce que fait l'interface de Visual Studio. En revanche
-les points **temporaires** et **dépendants** n'existent pas dans EnvDTE : l'extension les reproduit
-en s'appuyant sur `Debugger.BreakpointLastHit` à chaque arrêt. Le comportement observable est le
-même, mais ces deux attributs ne survivent pas à un rechargement de la solution et n'apparaissent
-pas comme tels dans la fenêtre Points d'arrêt. Les dépendances se réarment à chaque nouvelle
-session de débogage, comme dans Visual Studio.
+Les points d'arrêt sont identifiés par `chemin:ligne`, format attendu par `depends_on` et
+`update_breakpoint`.
+
+---
 
 ## Envoyer une sélection depuis Visual Studio
 
 Dans l'éditeur (`Ctrl+Alt+Maj+C` ou clic droit) et dans le menu contextuel de la fenêtre Sortie :
-**« Envoyer à Claude Code »**. La sélection est figée au moment du clic — c'est le point important,
-car entre le moment où tu sélectionnes et celui où tu formules ta demande, la sélection a souvent
-déjà changé.
+**« Envoyer à Claude Code »**. La sélection est figée au moment du clic, ce qui évite que Claude
+lise autre chose au moment où vous formulez votre demande.
 
-Deux chemins selon l'état de la connexion :
+- Si Claude Code est connecté à l'IDE (`/ide` dans le terminal), la sélection est poussée
+  directement dans le prompt.
+- Sinon elle est mise en file, et Claude la récupère avec `take_pending_context`.
 
-- **Claude Code connecté à l'IDE** (`/ide` dans le terminal) → la sélection est poussée
-  directement dans le prompt sous forme de @-mention.
-- **Sinon** → elle est mise en file, et Claude la récupère avec `take_pending_context`.
+`get_selection` lit également la sélection courante à la demande, sans rien envoyer.
 
-Sans rien envoyer du tout, `get_selection` lit la sélection courante à la demande.
+---
 
-### Comment fonctionne le push
+## Plusieurs instances de Visual Studio
 
-Claude Code expose un protocole d'intégration IDE : l'extension ouvre un serveur WebSocket,
-dépose `~/.claude/ide/<port>.lock` décrivant le port, l'`authToken` et les `workspaceFolders`,
-et Claude Code s'y connecte. Par-dessus, c'est le même JSON-RPC que le pont HTTP — le
-`McpDispatcher` est réutilisé tel quel — plus deux notifications que l'IDE peut pousser :
-`at_mentioned` et `selection_changed`.
+Chaque instance s'enregistre, et Claude Code garde une URL unique : `http://127.0.0.1:5230/mcp`.
 
-**Ce protocole est interne à Claude Code et non documenté publiquement.** Il a été reproduit
-depuis l'extension Visual Studio Code officielle et peut changer sans préavis. S'il casse, le
-pont HTTP continue de fonctionner et seul le push est perdu.
+- Une seule instance ouverte → rien à faire.
+- Plusieurs → `list_instances` pour les voir, `use_instance` pour choisir, ou le paramètre
+  `instance` sur chaque appel.
+- En cas d'ambiguïté, les outils **refusent de deviner** et renvoient la liste des choix : une
+  compilation lancée dans la mauvaise solution coûte plus cher qu'une question.
 
-Deux conséquences concrètes de sa conception :
+Si l'instance qui sert de point d'entrée se ferme, une autre reprend le rôle en moins de dix
+secondes, sans reconfiguration.
 
-- `at_mentioned` ne transporte **pas de texte**, seulement `{filePath, lineStart, lineEnd}` :
-  Claude relit le fichier. Une portion de console est donc d'abord écrite dans
-  `%TEMP%\claude-vs-mcp\snippets\`, puis mentionnée.
-- Les lignes y sont **0-based** alors qu'EnvDTE compte à partir de 1.
-
-Claude Code associe une session à un IDE via `workspaceFolders`, republié à chaque changement de
-solution. Si l'association automatique échoue — le terminal n'étant pas un processus enfant de
-`devenv`, contrairement au terminal intégré de VS Code — `/ide` permet de choisir l'instance à la
-main.
+---
 
 ## Sécurité
 
-- Écoute sur `127.0.0.1` uniquement — jamais `+` ni `0.0.0.0`. Ce choix évite aussi d'avoir besoin
-  d'une `urlacl` ou de droits administrateur.
-- Jeton obligatoire (`Authorization: Bearer …`), comparé à temps constant, stocké dans
-  `%APPDATA%\claude-vs-mcp\token` et partagé par toutes les instances de l'utilisateur.
-- En-têtes `Origin` et `Host` validés : sans cela, n'importe quelle page web ouverte dans le
-  navigateur pourrait piloter Visual Studio par DNS rebinding.
-- Corps de requête plafonné à 1 Mo.
+- Écoute sur `127.0.0.1` uniquement, jamais sur une interface externe.
+- Jeton obligatoire, comparé à temps constant, stocké dans `%APPDATA%\claude-vs-mcp\token`.
+- En-têtes `Origin` et `Host` validés : sans cela, une page web ouverte dans votre navigateur
+  pourrait piloter Visual Studio par DNS rebinding.
 
-**À garder en tête** : ce serveur donne de fait l'exécution de code arbitraire. Un build lance
-les targets MSBuild et les scripts pre/post-build du dépôt, et le débogueur démarre des processus.
-Il tourne avec vos privilèges.
+**À garder en tête** : ce serveur donne de fait l'exécution de code arbitraire. Une compilation
+lance les targets MSBuild et les scripts pre/post-build du dépôt ouvert, et le débogueur démarre
+des processus. Il tourne avec vos privilèges. Ne l'utilisez pas sur une machine où vous ouvrez du
+code auquel vous ne faites pas confiance.
+
+---
 
 ## Limites connues
 
-- **`get_errors` ne renvoie pas le code d'erreur** (`CS0103`…) : `EnvDTE.ErrorItem` ne l'expose pas.
-  L'obtenir demanderait de passer par `IVsTaskList2` / `IVsTaskItem3.GetColumnValue`.
-- **`get_stack` ne donne ni fichier ni ligne** : `EnvDTE.StackFrame` expose uniquement
-  fonction, module, langage et type de retour. Pour la position courante, utiliser `debug_state`,
-  qui la déduit du document actif — fiable en pratique, mais sensible à la navigation manuelle.
-- **`evaluate` / `get_locals` / `get_stack` exigent le mode arrêt.** L'évaluateur d'expressions
-  n'existe pas pendant l'exécution.
-- **Évaluer peut avoir des effets de bord** : une propriété appelée pendant l'évaluation exécute
-  son code.
-- **`get_output_pane`** : le buffer d'un pane est borné par Visual Studio, le détail du pane de
-  compilation dépend de la verbosité MSBuild, et la sortie d'une application console lancée dans
-  une **console externe n'y apparaît pas du tout**.
-- **Une boîte de dialogue modale fige l'automation.** Chaque outil a donc un timeout. Penser à
-  activer le rechargement automatique des fichiers modifiés hors de l'éditeur, sinon chaque
-  modification faite par Claude Code déclenche une popup.
-- **La condition et le compteur de passages d'un point d'arrêt ne sont pas modifiables** après
-  création : EnvDTE les expose en lecture seule. `update_breakpoint` recrée donc le point d'arrêt
-  dans ces cas — transparent, sauf que son compteur de passages repart de zéro. Seuls `enabled`,
-  `message`, `also_break` et `filter` sont modifiables en place.
-- **Le Test Explorer n'a pas d'API publique** : passer par `dotnet test` en ligne de commande.
-- Un seul appel d'outil s'exécute à la fois par instance : EnvDTE tolère mal la réentrance, et
-  deux `debug_step` concurrents corrompraient l'état du débogueur.
+- **`get_errors` ne renvoie pas le code d'erreur** (`CS0103`…) : l'API d'automatisation ne l'expose
+  pas.
+- **`get_stack` ne donne ni fichier ni ligne**, seulement fonction, module et langage. Pour la
+  position courante, utiliser `debug_state`.
+- **`evaluate`, `get_locals` et `get_stack` exigent un arrêt** sur point d'arrêt : l'évaluateur
+  d'expressions n'existe pas pendant l'exécution. Évaluer peut avoir des effets de bord, une
+  propriété appelée exécutant son code.
+- **La condition d'un point d'arrêt n'est pas modifiable** après création. `update_breakpoint` le
+  recrée dans ce cas, ce qui remet son compteur de passages à zéro.
+- **Points temporaires et dépendants sont émulés** par l'extension, Visual Studio ne les exposant
+  pas : ils ne survivent pas à un rechargement de la solution et n'apparaissent pas comme tels dans
+  la fenêtre Points d'arrêt.
+- **La sortie d'une application console lancée dans une console externe** n'apparaît pas dans
+  `get_output_pane`.
+- **Une boîte de dialogue modale fige l'automatisation.** Chaque outil a donc un délai maximal.
+  Pensez à activer le rechargement automatique des fichiers modifiés hors de l'éditeur, sinon
+  chaque modification faite par Claude ouvre une fenêtre.
+- **Le Test Explorer n'a pas d'API publique** : passez par `dotnet test`.
+- Un seul outil s'exécute à la fois par instance : l'automatisation de Visual Studio tolère mal la
+  réentrance.
 
-## Versionnage
-
-La version vit **à un seul endroit** : l'attribut `Version` de `<Identity>` dans
-`src/ClaudeCodeVsMcp/source.extension.vsixmanifest`. `AssemblyVersion`, `AssemblyFileVersion` et
-`McpDispatcher.ServerVersion` en sont dérivés à la compilation (cible MSBuild `GenerateVersionInfo`),
-il n'y a donc jamais deux fichiers à tenir en phase.
-
-Chaque modification s'accompagne d'un bump :
-
-| Niveau | Quand |
-|---|---|
-| patch | correction ou ajustement interne, sans changement visible |
-| mineur | nouvel outil MCP, nouvelle commande, nouvelle capacité |
-| majeur | rupture pour un utilisateur existant : outil supprimé ou renommé, changement de port ou d'authentification |
-
-Ce n'est pas qu'une convention d'historique : **le mécanisme de mise à jour de Visual Studio en
-dépend**. `VSIXInstaller` ne met à jour en place que si la version du manifeste est supérieure à
-celle installée. Une version figée oblige à désinstaller avant chaque réinstallation.
-
-## Notes d'implémentation
-
-Trois pièges structurent le code, et les enfreindre casse l'extension de façon silencieuse :
-
-1. **Les objets d'événements COM doivent être conservés dans des champs.** `dte.Events.BuildEvents`
-   renvoie un nouvel objet à chaque accès ; sans référence forte, le GC le collecte et les
-   événements cessent d'arriver sans la moindre erreur.
-2. **Jamais de surcharge bloquante de DTE** (`Build(true)`, `Go(true)`, `Step*(true)`) : le thread
-   UI est celui dont le build et le débogueur ont besoin pour progresser. Toujours `false` +
-   attente de l'événement, et jamais de `.Result` / `.Wait()` sur le thread UI.
-3. **Les `TaskCompletionSource` utilisent `RunContinuationsAsynchronously`**, sinon la suite du
-   traitement s'exécute en ligne dans le callback COM, sur le thread UI.
-
-Autre point non évident : **les panes de la fenêtre Sortie sont localisés** (« Générer » sur un
-IDE français). Ils sont donc résolus par GUID, jamais par nom.
-
-Le protocole MCP est implémenté à la main : le SDK C# officiel cible `net8.0`/`netstandard2.0` et
-sa variante serveur exige ASP.NET Core, inutilisable depuis un VSIX .NET Framework in-process.
-La sérialisation passe par Newtonsoft.Json, fourni par le shell Visual Studio — l'assembly n'est
-pas embarquée dans le VSIX, ce qui évite les conflits de redirection de liaison dans `devenv.exe`.
+---
 
 ## Dépannage
 
 | Symptôme | Piste |
 |---|---|
-| Rien dans la fenêtre Sortie | `devenv /log`, puis lire `%APPDATA%\Microsoft\VisualStudio\<version>\ActivityLog.xml` |
-| `claude mcp list` échoue | Vérifier d'abord avec `tools\Smoke-Test.ps1` : isole transport et configuration client |
+| Rien dans le pane « Claude MCP » | `devenv /log`, puis lire `%APPDATA%\Microsoft\VisualStudio\<version>\ActivityLog.xml` |
+| `claude mcp list` échoue | Vérifier d'abord avec `tools\Smoke-Test.ps1` : isole le transport de la configuration client |
 | Port 5230 déjà pris | `Get-NetTCPConnection -LocalPort 5230`, ou définir `CLAUDE_VS_MCP_HUB_PORT` |
 | Mauvaise instance pilotée | `list_instances` puis `use_instance` |
 
-## Hooks git
+Le journal de l'extension est écrit dans le pane **Claude MCP** et dupliqué dans
+`%TEMP%\claude-vs-mcp\extension-<pid>.log`.
 
-Le dépôt est public. Deux hooks, versionnés dans `.githooks/`, refusent toute adresse qui n'est
-pas publique :
+---
 
-- `pre-commit` — bloque un commit dont l'adresse d'auteur ou de committer ne correspond pas au
-  motif attendu, et affiche la commande de correction.
-- `pre-push` — inspecte les commits réellement poussés. Il rattrape ceux que `pre-commit` n'a pas
-  vus : cherry-pick, merge, autre outil, ou commits antérieurs à l'installation des hooks.
+## Développement
 
-**À faire une fois par clone** — `core.hooksPath` est une configuration locale, elle ne se
-transporte pas avec le dépôt :
+```powershell
+pwsh tools\Build.ps1              # compile, produit le .vsix
+pwsh tools\Build.ps1 -Install     # installe (Visual Studio fermé, terminal élevé)
+pwsh tools\Smoke-Test.ps1         # teste le serveur en HTTP brut, sans Claude Code
+pwsh tools\New-Release.ps1        # étiquette, pousse et publie une release
+```
+
+`F5` déploie dans la ruche expérimentale (`/rootsuffix Exp`) sans toucher à votre installation
+principale.
+
+**Hooks git** — à activer une fois par clone, `core.hooksPath` étant une configuration locale :
 
 ```powershell
 git config core.hooksPath .githooks
 ```
 
-Le motif accepté vaut par défaut `@users\.noreply\.github\.com$`. Pour l'adapter :
+`pre-commit` et `pre-push` refusent toute adresse e-mail non publique. Motif surchargeable via
+`git config hooks.allowedEmail`.
 
-```powershell
-git config hooks.allowedEmail '@mondomaine\.fr$'
-```
+**Versionnage** — la version vit à un seul endroit, l'attribut `Version` de
+`source.extension.vsixmanifest` ; `AssemblyVersion` et la version annoncée par le serveur en sont
+dérivées à la compilation. Chaque modification l'incrémente : patch pour une correction, mineur
+pour une nouvelle capacité, majeur pour une rupture. Le mécanisme de mise à jour de Visual Studio
+en dépend, `VSIXInstaller` ne remplaçant en place que si la version augmente.
 
-Retirer une adresse de l'historique après coup impose de le réécrire puis de forcer le push, et
-les anciens commits restent consultables un temps sur GitHub par leur SHA. D'où le choix de
-bloquer à la source plutôt que de corriger après.
+### Trois pièges à connaître avant de contribuer
 
-## Publier une release
+1. **Les objets d'événements COM doivent être gardés dans des champs.** `dte.Events.BuildEvents`
+   renvoie un nouvel objet à chaque accès ; sans référence forte, le ramasse-miettes le collecte et
+   les événements cessent d'arriver sans la moindre erreur.
+2. **Jamais de surcharge bloquante** (`Build(true)`, `Go(true)`) : le thread UI est celui dont la
+   compilation et le débogueur ont besoin pour progresser. Toujours `false` puis attente de
+   l'événement, et jamais de `.Result` sur le thread UI.
+3. **Les panes de sortie sont localisés** — « Générer » sur un IDE français. Ils sont résolus par
+   GUID, jamais par nom.
 
-```powershell
-pwsh tools\New-Release.ps1 -WhatIf    # verifie et compile, sans rien publier
-pwsh tools\New-Release.ps1            # etiquette, pousse et publie
-```
-
-La version n'est pas saisie : elle est lue dans `source.extension.vsixmanifest`. Le script refuse
-de publier si l'arbre de travail n'est pas propre, si le tag existe déjà, ou si le `.vsix` compilé
-ne porte pas la version annoncée par le manifeste — sans cette dernière vérification, on pourrait
-attacher à un tag un artefact qui ne lui correspond pas.
-
-Le `.vsix` est joint à la release, donc installable depuis GitHub sans avoir à compiler.
+---
 
 ## Licence
 
-[Apache License 2.0 avec Commons Clause](LICENSE) — voir le fichier `LICENSE`.
+[Apache License 2.0 avec Commons Clause](LICENSE).
 
-Vous pouvez **utiliser, modifier, redistribuer et forker** ce code, y compris dans un cadre
-professionnel et au sein d'une entreprise. Aucune restriction sur l'usage interne.
+Utilisation, modification, redistribution et fork **libres**, y compris en entreprise et pour un
+usage professionnel. La seule chose interdite est de **vendre** le logiciel au sens du Commons
+Clause : fournir à des tiers, contre rémunération, un produit ou un service dont la valeur dérive
+entièrement ou substantiellement de ses fonctionnalités — ce qui couvre la revente, l'hébergement
+payant et le support facturé sur cette base.
 
-La seule chose interdite est de **vendre** le logiciel, au sens que le Commons Clause donne à ce
-terme : fournir à des tiers, contre rémunération, un produit ou un service dont la valeur dérive
-entièrement ou substantiellement des fonctionnalités de ce logiciel. Cela couvre la revente,
-l'hébergement payant et les prestations de conseil ou de support facturées sur cette base.
-
-Deux points à connaître :
-
-- Le Commons Clause est un **avenant public** rédigé par Heather Meeker, et non une clause maison :
-  il se superpose à une licence existante en n'en retirant que le droit de vendre. Le socle
-  Apache 2.0 couvre les brevets, la garantie et les mentions obligatoires.
-- Cette combinaison **n'est pas une licence open source** au sens de l'OSI, et GitHub l'affichera
-  comme « Other ». C'est inhérent à toute restriction commerciale, quelle qu'en soit la forme.
-
-Toute mention de licence ou attribution requise par Apache 2.0 doit également reproduire la
-condition Commons Clause.
-
-Pour un usage sortant de ce cadre, contactez le détenteur des droits : rien n'empêche l'octroi
-d'une licence distincte.
+Cette combinaison n'est pas une licence open source au sens de l'OSI, restriction commerciale
+oblige. Pour un usage sortant de ce cadre, contactez le détenteur des droits.

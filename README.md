@@ -191,6 +191,20 @@ pas embarquée dans le VSIX, ce qui évite les conflits de redirection de liaiso
 | Port 5230 déjà pris | `Get-NetTCPConnection -LocalPort 5230`, ou définir `CLAUDE_VS_MCP_HUB_PORT` |
 | Mauvaise instance pilotée | `list_instances` puis `use_instance` |
 
+## Publier une release
+
+```powershell
+pwsh tools\New-Release.ps1 -WhatIf    # verifie et compile, sans rien publier
+pwsh tools\New-Release.ps1            # etiquette, pousse et publie
+```
+
+La version n'est pas saisie : elle est lue dans `source.extension.vsixmanifest`. Le script refuse
+de publier si l'arbre de travail n'est pas propre, si le tag existe déjà, ou si le `.vsix` compilé
+ne porte pas la version annoncée par le manifeste — sans cette dernière vérification, on pourrait
+attacher à un tag un artefact qui ne lui correspond pas.
+
+Le `.vsix` est joint à la release, donc installable depuis GitHub sans avoir à compiler.
+
 ## Licence
 
 [Apache License 2.0 avec Commons Clause](LICENSE) — voir le fichier `LICENSE`.

@@ -1,0 +1,32 @@
+#!/bin/sh
+#
+# Refuse un commit dont l'adresse d'auteur ou de committer n'est pas publique.
+#
+# Ce depot est public : une adresse professionnelle dans l'historique devient indexable et
+# scrapable, et l'en retirer apres coup exige de reecrire l'historique puis de forcer le push.
+# Mieux vaut bloquer a la source.
+#
+# Motif attendu, surchargeable :
+#   git config hooks.allowedEmail '@users\.noreply\.github\.com$'
+
+set -e
+
+pattern=$(git config hooks.allowedEmail || true)
+[ -n "$pattern" ] || pattern='@users\.noreply\.github\.com$'
+
+author=$(git var GIT_AUTHOR_IDENT | sed -n 's/.*<\(.*\)>.*/\1/p')
+committer=$(git var GIT_COMMITTER_IDENT | sed -n 's/.*<\(.*\)>.*/\1/p')
+
+refuse() {
+    echo "pre-commit : commit refuse." >&2
+    echo "  $1 : $2" >&2
+    echo "  attendu : une adresse correspondant a  $pattern" >&2
+    echo >&2
+    echo "  Corriger pour ce depot uniquement :" >&2
+    echo "    git config user.email '62358883+R3C-0N@users.noreply.github.com'" >&2
+    echo "    git config user.name  'Mathis Medard'" >&2
+    exit 1
+}
+
+echo "$author"    | grep -Eq "$pattern" || refuse "adresse d'auteur" "$author"
+echo "$committer" | grep -Eq "$pattern" || refuse "adresse de committer" "$committer"

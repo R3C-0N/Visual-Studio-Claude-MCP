@@ -225,6 +225,33 @@ pas embarquée dans le VSIX, ce qui évite les conflits de redirection de liaiso
 | Port 5230 déjà pris | `Get-NetTCPConnection -LocalPort 5230`, ou définir `CLAUDE_VS_MCP_HUB_PORT` |
 | Mauvaise instance pilotée | `list_instances` puis `use_instance` |
 
+## Hooks git
+
+Le dépôt est public. Deux hooks, versionnés dans `.githooks/`, refusent toute adresse qui n'est
+pas publique :
+
+- `pre-commit` — bloque un commit dont l'adresse d'auteur ou de committer ne correspond pas au
+  motif attendu, et affiche la commande de correction.
+- `pre-push` — inspecte les commits réellement poussés. Il rattrape ceux que `pre-commit` n'a pas
+  vus : cherry-pick, merge, autre outil, ou commits antérieurs à l'installation des hooks.
+
+**À faire une fois par clone** — `core.hooksPath` est une configuration locale, elle ne se
+transporte pas avec le dépôt :
+
+```powershell
+git config core.hooksPath .githooks
+```
+
+Le motif accepté vaut par défaut `@users\.noreply\.github\.com$`. Pour l'adapter :
+
+```powershell
+git config hooks.allowedEmail '@mondomaine\.fr$'
+```
+
+Retirer une adresse de l'historique après coup impose de le réécrire puis de forcer le push, et
+les anciens commits restent consultables un temps sur GitHub par leur SHA. D'où le choix de
+bloquer à la source plutôt que de corriger après.
+
 ## Publier une release
 
 ```powershell

@@ -1,0 +1,49 @@
+#!/bin/sh
+#
+# Refuse un push contenant un commit dont l'adresse n'est pas publique.
+#
+# Complete pre-commit, qui ne voit que les commits crees ici : ce hook rattrape ceux qui
+# viennent d'un cherry-pick, d'un merge, d'un autre outil, ou d'avant l'installation des hooks.
+
+set -e
+
+pattern=$(git config hooks.allowedEmail || true)
+[ -n "$pattern" ] || pattern='@users\.noreply\.github\.com$'
+
+zero='0000000000000000000000000000000000000000'
+status=0
+
+while read -r _local_ref local_sha _remote_ref remote_sha; do
+    # Suppression de reference : rien a inspecter.
+    [ "$local_sha" = "$zero" ] && continue
+
+    if [ "$remote_sha" = "$zero" ]; then
+        # Nouvelle reference : on se limite a ce qui n'est pas deja publie, sinon on
+        # reinspecterait tout l'historique du depot.
+        range=$(git rev-list "$local_sha" --not --remotes)
+    else
+        range=$(git rev-list "$remote_sha..$local_sha")
+    fi
+
+    for sha in $range; do
+        # Auteur et committer sont souvent identiques : on dedoublonne pour ne signaler
+        # chaque commit qu'une fois.
+        bad=$(git show -s --format='%ae%n%ce' "$sha" | sort -u | grep -Ev "$pattern" || true)
+        if [ -n "$bad" ]; then
+            echo "pre-push : $(git show -s --format='%h %s' "$sha")" >&2
+            echo "           adresse(s) non publique(s) : $(echo $bad | tr '
+' ' ')" >&2
+            status=1
+        fi
+    done
+done
+
+if [ "$status" -ne 0 ]; then
+    echo >&2
+    echo "Push refuse : ce depot est public." >&2
+    echo "  Reecrire les adresses concernees, par exemple :" >&2
+    echo "    git rebase -x 'git commit --amend --no-edit --reset-author' <base>" >&2
+    echo "  Ou, pour un correctif ponctuel sur le dernier commit :" >&2
+    echo "    git commit --amend --no-edit --reset-author" >&2
+    exit 1
+fi

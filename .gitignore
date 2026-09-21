@@ -1,0 +1,14 @@
+# Build output
+[Bb]in/
+[Oo]bj/
+*.user
+*.suo
+.vs/
+
+# NuGet
+packages/
+*.nupkg
+
+# VSIX
+*.vsix
+*.binlog

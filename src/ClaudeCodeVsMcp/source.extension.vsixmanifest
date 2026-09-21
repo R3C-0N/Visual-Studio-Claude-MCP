@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<PackageManifest Version="2.0.0" xmlns="http://schemas.microsoft.com/developer/vsx-schema/2011" xmlns:d="http://schemas.microsoft.com/developer/vsx-schema-design/2011">
+  <Metadata>
+    <Identity Id="ClaudeCodeVsMcp.CD41CDB5-D6BB-4351-972A-BE5912703F9C" Version="0.1.0" Language="en-US" Publisher="m.medard" />
+    <DisplayName>Claude Code MCP Bridge</DisplayName>
+    <Description xml:space="preserve">Expose Visual Studio (build, erreurs, debogueur, points d'arret, variables, fichiers) a Claude Code via un serveur MCP HTTP local.</Description>
+    <MoreInfo>https://github.com/</MoreInfo>
+    <Tags>MCP, Claude, AI, automation, debugger</Tags>
+  </Metadata>
+  <Installation>
+    <!-- API 17.x : VS 2022 (17.x) ET VS 2026 (18.x) qui conserve la compatibilite d'API 17.x. -->
+    <InstallationTarget Id="Microsoft.VisualStudio.Community" Version="[17.0,19.0)">
+      <ProductArchitecture>amd64</ProductArchitecture>
+    </InstallationTarget>
+  </Installation>
+  <Dependencies>
+    <Dependency Id="Microsoft.Framework.NDP" DisplayName="Microsoft .NET Framework" d:Source="Manual" Version="[4.7.2,)" />
+  </Dependencies>
+  <Prerequisites>
+    <Prerequisite Id="Microsoft.VisualStudio.Component.CoreEditor" Version="[17.0,19.0)" DisplayName="Visual Studio core editor" />
+  </Prerequisites>
+  <Assets>
+    <Asset Type="Microsoft.VisualStudio.VsPackage" d:Source="Project" d:ProjectName="%CurrentProject%" Path="|%CurrentProject%;PkgdefProjectOutputGroup|" />
+  </Assets>
+</PackageManifest>

@@ -1,0 +1,105 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="15.0" DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <Import Project="$(MSBuildExtensionsPath)\$(MSBuildToolsVersion)\Microsoft.Common.props" Condition="Exists('$(MSBuildExtensionsPath)\$(MSBuildToolsVersion)\Microsoft.Common.props')" />
+
+  <PropertyGroup>
+    <MinimumVisualStudioVersion>17.0</MinimumVisualStudioVersion>
+    <Configuration Condition=" '$(Configuration)' == '' ">Debug</Configuration>
+    <Platform Condition=" '$(Platform)' == '' ">AnyCPU</Platform>
+    <ProjectGuid>{A2F8F1DE-F237-4524-8437-8A430EAABDB2}</ProjectGuid>
+    <!-- Flavor VSIX : necessite le workload "Visual Studio extension development"
+         (Microsoft.VisualStudio.Workload.VisualStudioExtension), installe sur ce poste.
+         Il apporte le designer de manifeste et le deploiement F5 vers l'instance experimentale. -->
+    <ProjectTypeGuids>{82b43b9b-a64c-4715-b499-d71e9ca2bd60};{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}</ProjectTypeGuids>
+    <OutputType>Library</OutputType>
+    <AppDesignerFolder>Properties</AppDesignerFolder>
+    <RootNamespace>ClaudeCodeVsMcp</RootNamespace>
+    <AssemblyName>ClaudeCodeVsMcp</AssemblyName>
+    <TargetFrameworkVersion>v4.7.2</TargetFrameworkVersion>
+    <RestoreProjectStyle>PackageReference</RestoreProjectStyle>
+    <GeneratePkgDefFile>true</GeneratePkgDefFile>
+    <CreateVsixContainer>true</CreateVsixContainer>
+    <IncludeAssemblyInVSIXContainer>true</IncludeAssemblyInVSIXContainer>
+    <IncludeDebugSymbolsInVSIXContainer>false</IncludeDebugSymbolsInVSIXContainer>
+    <IncludeDebugSymbolsInLocalVSIXDeployment>false</IncludeDebugSymbolsInLocalVSIXDeployment>
+    <CopyBuildOutputToOutputDirectory>true</CopyBuildOutputToOutputDirectory>
+    <CopyOutputSymbolsToOutputDirectory>true</CopyOutputSymbolsToOutputDirectory>
+    <StartAction>Program</StartAction>
+    <StartProgram Condition="'$(DevEnvDir)' != ''">$(DevEnvDir)devenv.exe</StartProgram>
+    <StartArguments>/rootsuffix Exp</StartArguments>
+    <DeployExtension Condition="'$(DeployExtension)' == ''">false</DeployExtension>
+    <VSSDKTargetPlatformRegRootSuffix>Exp</VSSDKTargetPlatformRegRootSuffix>
+    <TargetVsixContainerName>ClaudeCodeVsMcp.vsix</TargetVsixContainerName>
+
+    <!-- Analyseurs vs-threading :
+         VSTHRD010 (acces DTE hors thread UI) ne sait pas que UiThread.RunAsync fait un
+           SwitchToMainThreadAsync : il signale une centaine de faux positifs qui noieraient
+           les vrais avertissements. La protection reste assuree a l'execution par les appels
+           ThreadHelper.ThrowIfNotOnUIThread() presents dans chaque helper.
+         VSTHRD003 vise l'attente d'une tache creee ailleurs : c'est exactement le pont
+           evenement COM -> TaskCompletionSource de BuildWatcher et DebugWatcher, qui est voulu.
+         VSTHRD200 reclame un suffixe Async sur Arm(), qui ne demarre aucun travail : le
+           renommer serait trompeur. -->
+    <NoWarn>$(NoWarn);VSTHRD010;VSTHRD003;VSTHRD200</NoWarn>
+  </PropertyGroup>
+
+  <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Debug|AnyCPU' ">
+    <DebugSymbols>true</DebugSymbols>
+    <DebugType>full</DebugType>
+    <Optimize>false</Optimize>
+    <OutputPath>bin\Debug\</OutputPath>
+    <DefineConstants>DEBUG;TRACE</DefineConstants>
+    <!-- F5 deploie dans la ruche experimentale 18.0_<id>Exp, pas dans l'IDE principal. -->
+    <DeployExtension>true</DeployExtension>
+    <ErrorReport>prompt</ErrorReport>
+    <WarningLevel>4</WarningLevel>
+  </PropertyGroup>
+  <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Release|AnyCPU' ">
+    <DebugType>pdbonly</DebugType>
+    <Optimize>true</Optimize>
+    <OutputPath>bin\Release\</OutputPath>
+    <DefineConstants>TRACE</DefineConstants>
+    <ErrorReport>prompt</ErrorReport>
+    <WarningLevel>4</WarningLevel>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Reference Include="System" />
+    <Reference Include="System.Core" />
+    <Reference Include="System.Net.Http" />
+    <Reference Include="System.Web.Extensions" />
+    <Reference Include="System.Xml" />
+    <Reference Include="System.Xml.Linq" />
+  </ItemGroup>
+
+  <!-- Globbing: evite d'enumerer chaque fichier, contrairement au template VSIX classique. -->
+  <ItemGroup>
+    <Compile Include="**\*.cs" Exclude="bin\**\*.cs;obj\**\*.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="source.extension.vsixmanifest">
+      <SubType>Designer</SubType>
+    </None>
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.VisualStudio.SDK" Version="17.14.40265">
+      <ExcludeAssets>runtime</ExcludeAssets>
+      <IncludeAssets>compile; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
+    <PackageReference Include="Microsoft.VSSDK.BuildTools" Version="17.14.2142">
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+      <PrivateAssets>all</PrivateAssets>
+    </PackageReference>
+    <!-- Newtonsoft.Json est fourni par le shell VS (redirections de liaison dans devenv.exe.config).
+         On compile contre, mais on ne l'embarque PAS dans le VSIX : IncludeInVSIX=false.
+         Si une FileLoadException apparait au runtime, basculer IncludeInVSIX sur true. -->
+    <PackageReference Include="Newtonsoft.Json" Version="13.0.3">
+      <ExcludeAssets>runtime</ExcludeAssets>
+      <IncludeInVSIX>false</IncludeInVSIX>
+    </PackageReference>
+  </ItemGroup>
+
+  <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
+</Project>

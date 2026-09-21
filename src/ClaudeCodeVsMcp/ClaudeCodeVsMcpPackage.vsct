@@ -12,11 +12,9 @@
         <Parent guid="guidSHLMainMenu" id="IDM_VS_CTXT_CODEWIN" />
       </Group>
 
-      <!-- Menu contextuel de la fenetre Sortie : c'est ce qui permet d'envoyer une portion
-           de console, le cas que le menu de l'editeur ne couvre pas. -->
-      <Group guid="guidClaudeCmdSet" id="ClaudeOutputGroup" priority="0x0600">
-        <Parent guid="guidSHLMainMenu" id="IDM_VS_CTXT_OUTPUTWINDOW" />
-      </Group>
+      <!-- Le menu contextuel du pane de sortie n'expose aucun identifiant de menu dans
+           vsshlids.h, seulement ses groupes : le bouton est donc rattache directement au
+           groupe existant IDG_VS_OUTPUTWINDOW_SELECT (celui de « Selectionner tout »). -->
     </Groups>
 
     <Buttons>
@@ -31,7 +29,7 @@
       </Button>
 
       <Button guid="guidClaudeCmdSet" id="cmdidSendOutputToClaude" priority="0x0100" type="Button">
-        <Parent guid="guidClaudeCmdSet" id="ClaudeOutputGroup" />
+        <Parent guid="guidSHLMainMenu" id="IDG_VS_OUTPUTWINDOW_SELECT" />
         <CommandFlag>DefaultInvisible</CommandFlag>
         <CommandFlag>DynamicVisibility</CommandFlag>
         <Strings>
@@ -54,7 +52,6 @@
 
     <GuidSymbol name="guidClaudeCmdSet" value="{F7D83724-4AC7-4935-896D-167AD15219EC}">
       <IDSymbol name="ClaudeEditorGroup" value="0x1020" />
-      <IDSymbol name="ClaudeOutputGroup" value="0x1021" />
       <IDSymbol name="cmdidSendToClaude" value="0x0100" />
       <IDSymbol name="cmdidSendOutputToClaude" value="0x0101" />
     </GuidSymbol>

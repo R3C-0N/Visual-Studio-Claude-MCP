@@ -47,6 +47,9 @@ namespace ClaudeCodeVsMcp.Commands
             var command = new SendToClaudeCommand(package);
             command.Register(service, CmdIdEditor, "editor");
             command.Register(service, CmdIdOutput, "output");
+
+            ExtensionLog.Info("Commande « Envoyer a Claude Code » enregistree " +
+                              "(menu contextuel de l'editeur et de la fenetre Sortie, Ctrl+Alt+Maj+C).");
         }
 
         private void Register(OleMenuCommandService service, int commandId, string source)
@@ -90,6 +93,8 @@ namespace ClaudeCodeVsMcp.Commands
 
         private void Execute(string source)
         {
+            ExtensionLog.Info("Commande d'envoi declenchee (source demandee : " + source + ").");
+
             _package.JoinableTaskFactory.RunAsync(async delegate
             {
                 try

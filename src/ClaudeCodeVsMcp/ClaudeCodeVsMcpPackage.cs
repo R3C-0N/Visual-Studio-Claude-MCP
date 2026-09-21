@@ -72,6 +72,7 @@ namespace ClaudeCodeVsMcp
             var outputWindow = await GetServiceAsync(typeof(SVsOutputWindow)) as IVsOutputWindow;
             ExtensionLog.Initialize(outputWindow);
             ExtensionLog.Info("Chargement du pont MCP " + McpDispatcher.ServerVersion + "...");
+            ExtensionLog.Info("Journal egalement ecrit dans " + ExtensionLog.FilePath);
 
             _dte = await GetServiceAsync(typeof(SDTE)) as DTE2;
             if (_dte == null)

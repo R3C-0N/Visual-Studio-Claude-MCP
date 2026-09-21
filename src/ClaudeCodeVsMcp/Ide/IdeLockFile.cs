@@ -62,6 +62,56 @@ namespace ClaudeCodeVsMcp.Ide
             }
         }
 
+        /// <summary>
+        /// Supprime les lockfiles laisses par des devenv disparus. Sans cela, /ide propose des
+        /// instances mortes et Claude Code tente de s'y connecter.
+        /// </summary>
+        internal static void PurgeStale()
+        {
+            try
+            {
+                if (!System.IO.Directory.Exists(Directory)) return;
+
+                foreach (var file in System.IO.Directory.GetFiles(Directory, "*.lock"))
+                {
+                    int pid;
+                    try
+                    {
+                        var content = JObject.Parse(File.ReadAllText(file));
+                        pid = (int?)content["pid"] ?? 0;
+                        // On ne touche qu'aux entrees ecrites par cette extension.
+                        if ((string)content["ideName"] != "Visual Studio") continue;
+                    }
+                    catch (Exception)
+                    {
+                        continue;
+                    }
+
+                    if (pid <= 0 || IsDead(pid))
+                    {
+                        try { File.Delete(file); } catch (Exception) { }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                ExtensionLog.Warn("Purge des lockfiles IDE impossible : " + ex.Message);
+            }
+        }
+
+        private static bool IsDead(int pid)
+        {
+            try
+            {
+                var process = System.Diagnostics.Process.GetProcessById(pid);
+                return !string.Equals(process.ProcessName, "devenv", StringComparison.OrdinalIgnoreCase);
+            }
+            catch (Exception)
+            {
+                return true;
+            }
+        }
+
         internal static void Remove(int port)
         {
             try

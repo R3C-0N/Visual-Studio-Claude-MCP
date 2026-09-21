@@ -64,6 +64,8 @@ namespace ClaudeCodeVsMcp.Ide
             _cts = new CancellationTokenSource();
             _authToken = Guid.NewGuid().ToString();
 
+            IdeLockFile.PurgeStale();
+
             for (var attempt = 0; attempt < PortAttempts; attempt++)
             {
                 var port = _random.Next(MinPort, MaxPort);

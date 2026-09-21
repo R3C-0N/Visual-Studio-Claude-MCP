@@ -193,22 +193,26 @@ pas embarquée dans le VSIX, ce qui évite les conflits de redirection de liaiso
 
 ## Licence
 
-[PolyForm Noncommercial 1.0.0](LICENSE) — voir le fichier `LICENSE`.
+[Apache License 2.0 avec Commons Clause](LICENSE) — voir le fichier `LICENSE`.
 
-Vous pouvez utiliser, modifier, redistribuer et forker ce code **à des fins non commerciales** :
-usage personnel, étude, recherche, projet amateur, ou au sein d'une organisation à but non lucratif.
+Vous pouvez **utiliser, modifier, redistribuer et forker** ce code, y compris dans un cadre
+professionnel et au sein d'une entreprise. Aucune restriction sur l'usage interne.
 
-En revanche, **tout usage commercial est exclu** — et cela va plus loin que la simple revente :
-une entreprise ne peut pas l'utiliser pour son activité, même en interne et même sans en tirer
-directement de revenu. C'est le choix assumé de cette licence.
+La seule chose interdite est de **vendre** le logiciel, au sens que le Commons Clause donne à ce
+terme : fournir à des tiers, contre rémunération, un produit ou un service dont la valeur dérive
+entièrement ou substantiellement des fonctionnalités de ce logiciel. Cela couvre la revente,
+l'hébergement payant et les prestations de conseil ou de support facturées sur cette base.
 
 Deux points à connaître :
 
-- PolyForm Noncommercial **n'est pas une licence open source** au sens de l'OSI. GitHub l'affichera
-  comme « Other ». C'est inhérent à toute clause non commerciale, quelle qu'elle soit.
-- Elle est en revanche **conçue pour du logiciel**, contrairement aux licences Creative Commons non
-  commerciales, qui ne traitent ni le code source, ni les brevets, ni la garantie — Creative Commons
-  déconseille elle-même leur usage pour du code.
+- Le Commons Clause est un **avenant public** rédigé par Heather Meeker, et non une clause maison :
+  il se superpose à une licence existante en n'en retirant que le droit de vendre. Le socle
+  Apache 2.0 couvre les brevets, la garantie et les mentions obligatoires.
+- Cette combinaison **n'est pas une licence open source** au sens de l'OSI, et GitHub l'affichera
+  comme « Other ». C'est inhérent à toute restriction commerciale, quelle qu'en soit la forme.
 
-Pour un usage commercial, contactez le détenteur des droits : rien n'empêche l'octroi d'une licence
-distincte.
+Toute mention de licence ou attribution requise par Apache 2.0 doit également reproduire la
+condition Commons Clause.
+
+Pour un usage sortant de ce cadre, contactez le détenteur des droits : rien n'empêche l'octroi
+d'une licence distincte.

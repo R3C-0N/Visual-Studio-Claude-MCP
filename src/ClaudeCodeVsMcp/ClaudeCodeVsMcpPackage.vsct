@@ -20,8 +20,6 @@
     <Buttons>
       <Button guid="guidClaudeCmdSet" id="cmdidSendToClaude" priority="0x0100" type="Button">
         <Parent guid="guidClaudeCmdSet" id="ClaudeEditorGroup" />
-        <CommandFlag>DefaultInvisible</CommandFlag>
-        <CommandFlag>DynamicVisibility</CommandFlag>
         <Strings>
           <ButtonText>Envoyer a Claude Code</ButtonText>
           <CanonicalName>ClaudeCode.SendSelection</CanonicalName>
@@ -30,8 +28,6 @@
 
       <Button guid="guidClaudeCmdSet" id="cmdidSendOutputToClaude" priority="0x0100" type="Button">
         <Parent guid="guidSHLMainMenu" id="IDG_VS_OUTPUTWINDOW_SELECT" />
-        <CommandFlag>DefaultInvisible</CommandFlag>
-        <CommandFlag>DynamicVisibility</CommandFlag>
         <Strings>
           <ButtonText>Envoyer a Claude Code</ButtonText>
           <CanonicalName>ClaudeCode.SendOutputSelection</CanonicalName>

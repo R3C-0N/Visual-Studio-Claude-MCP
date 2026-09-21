@@ -54,16 +54,16 @@ namespace ClaudeCodeVsMcp.Commands
             var id = new CommandID(CommandSet, commandId);
             var item = new OleMenuCommand((s, e) => Execute(source), id);
 
-            // La commande est declaree DefaultInvisible : sans ce gestionnaire elle n'apparaitrait
-            // jamais. On la masque aussi quand il n'y a rien a envoyer, plutot que de la laisser
-            // visible et sans effet.
+            // Le bouton est toujours visible : la decouvrabilite prime, et une commande
+            // conditionnellement invisible ne laisse aucune trace quand la condition se
+            // trompe. On ne pilote donc que l'activation, et en restant permissif : en cas
+            // de doute on laisse la commande active plutot que de la griser a tort.
             item.BeforeQueryStatus += (s, e) =>
             {
                 var command = s as OleMenuCommand;
                 if (command == null) return;
 
                 ThreadHelper.ThrowIfNotOnUIThread();
-                command.Visible = true;
                 command.Enabled = HasSomethingToSend(source);
             };
 
@@ -82,7 +82,9 @@ namespace ClaudeCodeVsMcp.Commands
             catch (Exception)
             {
                 // BeforeQueryStatus est appele a chaque ouverture de menu : il doit rester muet.
-                return false;
+                // On active malgre tout : Execute signalera une selection vide dans le journal,
+                // ce qui est plus diagnosticable qu'une commande grisee sans explication.
+                return true;
             }
         }
 

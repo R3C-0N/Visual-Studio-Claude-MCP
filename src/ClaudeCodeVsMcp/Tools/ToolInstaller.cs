@@ -17,6 +17,7 @@ namespace ClaudeCodeVsMcp.Tools
             SessionStore sessions,
             BuildWatcher buildWatcher,
             DebugWatcher debugWatcher,
+            BreakpointManager breakpoints,
             Func<JObject> serverInfo)
         {
             var registry = new ToolRegistry();
@@ -24,7 +25,7 @@ namespace ClaudeCodeVsMcp.Tools
             InstanceTools.Register(registry, sessions);
             SolutionTools.Register(registry);
             BuildTools.Register(registry, buildWatcher);
-            BreakpointTools.Register(registry);
+            BreakpointTools.Register(registry, breakpoints);
             DebugTools.Register(registry, debugWatcher, buildWatcher);
             InspectTools.Register(registry);
             OutputTools.Register(registry);

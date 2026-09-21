@@ -45,6 +45,16 @@ namespace ClaudeCodeVsMcp.Vs
         private DebuggerEvents _debuggerEvents;
         private TaskCompletionSource<DebugTransition> _pending;
 
+        /// <summary>
+        /// Declenche sur le thread UI a chaque passage en mode arret, apres l'achevement de
+        /// l'attente. Permet a BreakpointManager d'appliquer les semantiques temporaire et
+        /// dependante, qu'EnvDTE n'implemente pas.
+        /// </summary>
+        internal event Action Broke;
+
+        /// <summary>Declenche sur le thread UI quand la session de debogage se termine.</summary>
+        internal event Action SessionEnded;
+
         internal void Subscribe(DTE2 dte)
         {
             ThreadHelper.ThrowIfNotOnUIThread();
@@ -74,6 +84,7 @@ namespace ClaudeCodeVsMcp.Vs
         private void OnEnterBreakMode(dbgEventReason reason, ref dbgExecutionAction executionAction)
         {
             Complete(DebugTransitionKind.Break, reason.ToString());
+            Raise(Broke, "Broke");
         }
 
         private void OnEnterRunMode(dbgEventReason reason)
@@ -88,6 +99,19 @@ namespace ClaudeCodeVsMcp.Vs
         private void OnEnterDesignMode(dbgEventReason reason)
         {
             Complete(DebugTransitionKind.Design, reason.ToString());
+            Raise(SessionEnded, "SessionEnded");
+        }
+
+        /// <summary>
+        /// Un abonne qui leve ne doit pas remonter dans un callback COM du debogueur : cela
+        /// desabonnerait le sink et ferait disparaitre silencieusement tous les evenements
+        /// suivants.
+        /// </summary>
+        private static void Raise(Action handler, string name)
+        {
+            if (handler == null) return;
+            try { handler(); }
+            catch (Exception ex) { ClaudeCodeVsMcp.Infrastructure.ExtensionLog.Error("Evenement debogueur " + name, ex); }
         }
 
         private void Complete(DebugTransitionKind kind, string reason)

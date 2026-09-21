@@ -59,7 +59,7 @@ date de démarrage concordante) pour résister au recyclage de PID par Windows.
 | Solution | `solution_info`, `list_projects`, `open_file`, `set_startup_project`, `set_configuration` |
 | Build | `build`, `build_status`, `cancel_build`, `get_errors` |
 | Débogueur | `debug_start`, `debug_stop`, `debug_pause`, `debug_continue`, `debug_step`, `debug_state` |
-| Points d'arrêt | `set_breakpoint`, `list_breakpoints`, `clear_breakpoints` |
+| Points d'arrêt | `set_breakpoint`, `list_breakpoints`, `update_breakpoint`, `clear_breakpoints` |
 | Inspection | `evaluate`, `get_locals`, `get_stack` |
 | Sorties | `list_output_panes`, `get_output_pane` |
 | Sélection | `get_selection`, `take_pending_context` |
@@ -67,6 +67,36 @@ date de démarrage concordante) pour résister au recyclage de PID par Windows.
 Les opérations longues (build, exécution) prennent un `wait_ms`. Au-delà, la réponse a le statut
 `running` : **ce n'est pas une erreur**, c'est un état à ré-interroger avec `build_status` ou
 `debug_state`. Le plafond serveur est de 120 s pour rester sous le timeout du client MCP.
+
+## Variantes de points d'arrêt
+
+`set_breakpoint` couvre quatre variantes, combinables entre elles :
+
+| Variante | Paramètre | Comportement |
+|---|---|---|
+| Ordinaire | — | interrompt l'exécution |
+| Conditionnel | `condition`, `condition_type` | déclenche si l'expression est vraie, ou quand sa valeur change |
+| Tracepoint | `message`, `also_break` | journalise dans le pane Débogage **sans** interrompre |
+| Temporaire | `temporary` | se supprime après son premier déclenchement |
+| Dépendant | `depends_on` | reste désactivé jusqu'à ce que le point d'arrêt indiqué soit atteint |
+
+À quoi s'ajoutent `hit_count` avec `hit_count_mode` (`equal`, `greater_or_equal`, `multiple`) et
+`filter` pour restreindre à un thread ou un processus.
+
+Le message d'un tracepoint accepte la syntaxe de Visual Studio : expressions entre accolades et
+pseudo-variables. Par exemple `"i = {i}, appelé par $CALLER sur le thread $TID"`.
+
+Les points d'arrêt sont identifiés par `chemin:ligne`, format attendu par `depends_on`,
+`update_breakpoint` et retourné par `list_breakpoints`. EnvDTE ne fournit aucun identifiant
+stable, celui-ci est donc dérivé de l'emplacement.
+
+**Ce qui est natif et ce qui est émulé.** Les tracepoints sont natifs : `Breakpoint2.Message`
+avec `BreakWhenHit = false` est exactement ce que fait l'interface de Visual Studio. En revanche
+les points **temporaires** et **dépendants** n'existent pas dans EnvDTE : l'extension les reproduit
+en s'appuyant sur `Debugger.BreakpointLastHit` à chaque arrêt. Le comportement observable est le
+même, mais ces deux attributs ne survivent pas à un rechargement de la solution et n'apparaissent
+pas comme tels dans la fenêtre Points d'arrêt. Les dépendances se réarment à chaque nouvelle
+session de débogage, comme dans Visual Studio.
 
 ## Envoyer une sélection depuis Visual Studio
 
@@ -138,6 +168,10 @@ Il tourne avec vos privilèges.
 - **Une boîte de dialogue modale fige l'automation.** Chaque outil a donc un timeout. Penser à
   activer le rechargement automatique des fichiers modifiés hors de l'éditeur, sinon chaque
   modification faite par Claude Code déclenche une popup.
+- **La condition et le compteur de passages d'un point d'arrêt ne sont pas modifiables** après
+  création : EnvDTE les expose en lecture seule. `update_breakpoint` recrée donc le point d'arrêt
+  dans ces cas — transparent, sauf que son compteur de passages repart de zéro. Seuls `enabled`,
+  `message`, `also_break` et `filter` sont modifiables en place.
 - **Le Test Explorer n'a pas d'API publique** : passer par `dotnet test` en ligne de commande.
 - Un seul appel d'outil s'exécute à la fois par instance : EnvDTE tolère mal la réentrance, et
   deux `debug_step` concurrents corrompraient l'état du débogueur.

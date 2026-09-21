@@ -52,6 +52,7 @@ namespace ClaudeCodeVsMcp
         private readonly BuildWatcher _buildWatcher = new BuildWatcher();
         private readonly DebugWatcher _debugWatcher = new DebugWatcher();
         private readonly SessionStore _sessions = new SessionStore();
+        private readonly BreakpointManager _breakpoints = new BreakpointManager();
 
         // Les objets d'evenements COM DOIVENT rester references : sans champ, le GC les collecte
         // et les evenements cessent d'arriver silencieusement.
@@ -86,6 +87,11 @@ namespace ClaudeCodeVsMcp
             _buildWatcher.Subscribe(_dte);
             _debugWatcher.Subscribe(_dte);
 
+            // Points d'arret temporaires et dependants : EnvDTE ne les implemente pas, la
+            // semantique est appliquee a chaque arret et a chaque fin de session.
+            _debugWatcher.Broke += _breakpoints.OnBreak;
+            _debugWatcher.SessionEnded += _breakpoints.OnSessionEnded;
+
             _solutionEvents = _dte.Events.SolutionEvents; // champ obligatoire, cf. remarque ci-dessus
             _solutionEvents.Opened += OnSolutionChanged;
             _solutionEvents.AfterClosing += OnSolutionChanged;
@@ -102,7 +108,7 @@ namespace ClaudeCodeVsMcp
             // --- Retour en arriere-plan : rien de ce qui suit ne doit occuper le thread UI ---
             await TaskScheduler.Default;
 
-            var registry = ToolInstaller.Build(_sessions, _buildWatcher, _debugWatcher, DescribeServer);
+            var registry = ToolInstaller.Build(_sessions, _buildWatcher, _debugWatcher, _breakpoints, DescribeServer);
             var dispatcher = new McpDispatcher(registry, _sessions);
 
             _server = new McpHttpServer(dispatcher, ResolveHubPort());
@@ -319,6 +325,12 @@ namespace ClaudeCodeVsMcp
                 try { _ideBridge?.Dispose(); } catch (Exception) { }
                 try { _server?.Dispose(); } catch (Exception) { }
                 try { _buildWatcher.Dispose(); } catch (Exception) { }
+                try
+                {
+                    _debugWatcher.Broke -= _breakpoints.OnBreak;
+                    _debugWatcher.SessionEnded -= _breakpoints.OnSessionEnded;
+                }
+                catch (Exception) { }
                 try { _debugWatcher.Dispose(); } catch (Exception) { }
 
                 try { InstanceRegistry.Remove(Process.GetCurrentProcess().Id); } catch (Exception) { }

@@ -138,8 +138,17 @@ namespace ClaudeCodeVsMcp.Ide
                         continue;
                     }
 
-                    var wsContext = await context.AcceptWebSocketAsync(null).ConfigureAwait(false);
-                    ExtensionLog.Info("Claude Code est connecte a l'integration IDE.");
+                    LogUpgradeRequest(context.Request);
+
+                    // Sous-protocole : si le client en demande un et que le serveur ne le
+                    // renvoie pas, les bibliotheques clientes avortent juste apres la poignee de
+                    // main, sans envoyer le moindre message. Le serveur ws de l'extension
+                    // Visual Studio Code echo le premier demande par defaut : on fait pareil.
+                    var subProtocol = FirstRequestedSubProtocol(context.Request);
+
+                    var wsContext = await context.AcceptWebSocketAsync(subProtocol).ConfigureAwait(false);
+                    ExtensionLog.Info("Claude Code est connecte a l'integration IDE" +
+                                      (subProtocol == null ? " (sans sous-protocole)." : " (sous-protocole " + subProtocol + ").")); 
 
                     WebSocket previous;
                     lock (_gate)
@@ -160,6 +169,42 @@ namespace ClaudeCodeVsMcp.Ide
                 {
                     ExtensionLog.Error("Etablissement de la connexion IDE impossible.", ex);
                 }
+            }
+        }
+
+        private static string FirstRequestedSubProtocol(HttpListenerRequest request)
+        {
+            var requested = request.Headers["Sec-WebSocket-Protocol"];
+            if (string.IsNullOrWhiteSpace(requested)) return null;
+
+            var first = requested.Split(',')[0].Trim();
+            return string.IsNullOrEmpty(first) ? null : first;
+        }
+
+        /// <summary>
+        /// Journalise la requete d'upgrade. Quand le client se deconnecte sans rien envoyer,
+        /// c'est la seule information disponible pour comprendre ce qu'il attendait.
+        /// </summary>
+        private static void LogUpgradeRequest(HttpListenerRequest request)
+        {
+            try
+            {
+                var builder = new StringBuilder("Requete d'upgrade IDE : ");
+                foreach (var key in request.Headers.AllKeys)
+                {
+                    // Le jeton d'autorisation ne doit pas finir dans le journal.
+                    if (key.IndexOf("authorization", StringComparison.OrdinalIgnoreCase) >= 0)
+                    {
+                        builder.Append(key).Append("=<masque> ");
+                        continue;
+                    }
+                    builder.Append(key).Append('=').Append(request.Headers[key]).Append(' ');
+                }
+                ExtensionLog.Info(builder.ToString());
+            }
+            catch (Exception)
+            {
+                // Diagnostic uniquement.
             }
         }
 

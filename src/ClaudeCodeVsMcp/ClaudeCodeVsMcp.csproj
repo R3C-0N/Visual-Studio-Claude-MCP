@@ -118,6 +118,31 @@
     </PackageReference>
   </ItemGroup>
 
+  <!-- Source unique de verite pour la version : l'attribut Version de source.extension.vsixmanifest.
+       Les attributs d'assembly en sont derives a la compilation, ce qui evite d'avoir a tenir
+       plusieurs fichiers en phase a chaque bump. -->
+  <Target Name="GenerateVersionInfo" BeforeTargets="BeforeCompile">
+    <XmlPeek XmlInputPath="source.extension.vsixmanifest"
+             Query="/vsx:PackageManifest/vsx:Metadata/vsx:Identity/@Version"
+             Namespaces="&lt;Namespace Prefix='vsx' Uri='http://schemas.microsoft.com/developer/vsx-schema/2011' /&gt;">
+      <Output TaskParameter="Result" PropertyName="VsixManifestVersion" />
+    </XmlPeek>
+
+    <Error Condition="'$(VsixManifestVersion)' == ''"
+           Text="Version introuvable dans source.extension.vsixmanifest." />
+
+    <PropertyGroup>
+      <GeneratedVersionFile>$(IntermediateOutputPath)VersionInfo.g.cs</GeneratedVersionFile>
+    </PropertyGroup>
+
+    <WriteLinesToFile File="$(GeneratedVersionFile)" Overwrite="true" WriteOnlyWhenDifferent="true"
+                      Lines="// Genere au build depuis source.extension.vsixmanifest. Ne pas editer.;[assembly: System.Reflection.AssemblyVersion(&quot;$(VsixManifestVersion)&quot;)];[assembly: System.Reflection.AssemblyFileVersion(&quot;$(VsixManifestVersion)&quot;)]" />
+
+    <ItemGroup>
+      <Compile Include="$(GeneratedVersionFile)" />
+    </ItemGroup>
+  </Target>
+
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
 
   <!-- Targets VSIX (generation du .pkgdef, du manifeste et du conteneur .vsix).

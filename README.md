@@ -142,6 +142,25 @@ Il tourne avec vos privilèges.
 - Un seul appel d'outil s'exécute à la fois par instance : EnvDTE tolère mal la réentrance, et
   deux `debug_step` concurrents corrompraient l'état du débogueur.
 
+## Versionnage
+
+La version vit **à un seul endroit** : l'attribut `Version` de `<Identity>` dans
+`src/ClaudeCodeVsMcp/source.extension.vsixmanifest`. `AssemblyVersion`, `AssemblyFileVersion` et
+`McpDispatcher.ServerVersion` en sont dérivés à la compilation (cible MSBuild `GenerateVersionInfo`),
+il n'y a donc jamais deux fichiers à tenir en phase.
+
+Chaque modification s'accompagne d'un bump :
+
+| Niveau | Quand |
+|---|---|
+| patch | correction ou ajustement interne, sans changement visible |
+| mineur | nouvel outil MCP, nouvelle commande, nouvelle capacité |
+| majeur | rupture pour un utilisateur existant : outil supprimé ou renommé, changement de port ou d'authentification |
+
+Ce n'est pas qu'une convention d'historique : **le mécanisme de mise à jour de Visual Studio en
+dépend**. `VSIXInstaller` ne met à jour en place que si la version du manifeste est supérieure à
+celle installée. Une version figée oblige à désinstaller avant chaque réinstallation.
+
 ## Notes d'implémentation
 
 Trois pièges structurent le code, et les enfreindre casse l'extension de façon silencieuse :

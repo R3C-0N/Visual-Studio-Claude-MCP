@@ -26,7 +26,12 @@ namespace ClaudeCodeVsMcp.Server
     /// </summary>
     internal sealed class McpDispatcher
     {
-        internal const string ServerVersion = "0.1.0";
+        /// <summary>
+        /// Lue depuis l'assembly, elle-meme versionnee depuis source.extension.vsixmanifest :
+        /// la version ne se saisit qu'a un seul endroit.
+        /// </summary>
+        internal static readonly string ServerVersion =
+            typeof(McpDispatcher).Assembly.GetName().Version.ToString(3);
 
         /// <summary>Versions du protocole MCP supportees, de la plus recente a la plus ancienne.</summary>
         private static readonly string[] SupportedProtocols =

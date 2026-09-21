@@ -49,13 +49,18 @@ $installPath = & $vswhere -latest -prerelease -property installationPath
 $instanceId = & $vswhere -latest -prerelease -property instanceId
 $installer = Join-Path $installPath 'Common7\IDE\VSIXInstaller.exe'
 
-# VSIXInstaller refuse de reinstaller une identite deja presente a la meme version :
-# on desinstalle d'abord, sinon chaque iteration de dev exigerait de bumper la version.
+# VSIXInstaller met a jour en place des que la version du manifeste est superieure a celle
+# installee. La desinstallation n'est donc qu'un repli, pour le cas ou la version n'a pas
+# ete incrementee depuis la derniere installation.
 $identity = 'ClaudeCodeVsMcp.CD41CDB5-D6BB-4351-972A-BE5912703F9C'
-Write-Host "Desinstallation de la version precedente (si presente)..." -ForegroundColor DarkGray
-& $installer /quiet /uninstall:$identity /instanceIds:$instanceId 2>&1 | Out-Null
 
 Write-Host "Installation dans l'instance $instanceId..." -ForegroundColor Cyan
 & $installer /quiet /instanceIds:$instanceId $vsix
-if ($LASTEXITCODE -ne 0) { throw "VSIXInstaller a echoue (code $LASTEXITCODE)." }
+
+if ($LASTEXITCODE -ne 0) {
+    Write-Host "Mise a jour refusee (version inchangee ?). Desinstallation puis nouvelle tentative..." -ForegroundColor Yellow
+    & $installer /quiet /uninstall:$identity /instanceIds:$instanceId 2>&1 | Out-Null
+    & $installer /quiet /instanceIds:$instanceId $vsix
+    if ($LASTEXITCODE -ne 0) { throw "VSIXInstaller a echoue (code $LASTEXITCODE)." }
+}
 Write-Host "Installe. Relancer Visual Studio, puis : pwsh tools\Smoke-Test.ps1" -ForegroundColor Green

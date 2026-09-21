@@ -18,6 +18,13 @@ namespace ClaudeCodeVsMcp.Discovery
         /// <summary>Au-dela, une entree est consideree morte meme si le PID existe encore.</summary>
         private static readonly TimeSpan StaleAfter = TimeSpan.FromMinutes(2);
 
+        /// <summary>
+        /// Le heartbeat, le changement de role de hub et l'ouverture d'une solution peuvent
+        /// declencher une ecriture simultanement. Sans ce verrou et sans nom temporaire unique,
+        /// les ecritures se disputent le meme fichier .tmp et echouent en IOException.
+        /// </summary>
+        private static readonly object WriteGate = new object();
+
         internal static string Directory
         {
             get { return Path.Combine(Path.GetTempPath(), "claude-vs-mcp"); }
@@ -31,19 +38,33 @@ namespace ClaudeCodeVsMcp.Discovery
         /// <summary>Ecriture atomique : fichier temporaire puis remplacement, pour ne jamais exposer un JSON tronque.</summary>
         internal static void Write(InstanceInfo info)
         {
-            try
+            lock (WriteGate)
             {
-                System.IO.Directory.CreateDirectory(Directory);
-                var target = FileFor(info.Pid);
-                var temp = target + ".tmp";
-                File.WriteAllText(temp, info.ToJson().ToString(Newtonsoft.Json.Formatting.Indented));
+                var temp = (string)null;
+                try
+                {
+                    System.IO.Directory.CreateDirectory(Directory);
+                    var target = FileFor(info.Pid);
 
-                if (File.Exists(target)) File.Delete(target);
-                File.Move(temp, target);
-            }
-            catch (Exception ex)
-            {
-                ExtensionLog.Error("Ecriture du fichier de decouverte impossible.", ex);
+                    // Nom unique : deux ecritures concurrentes ne peuvent plus se marcher dessus.
+                    temp = target + "." + Guid.NewGuid().ToString("N").Substring(0, 8) + ".tmp";
+                    File.WriteAllText(temp, info.ToJson().ToString(Newtonsoft.Json.Formatting.Indented));
+
+                    if (File.Exists(target)) File.Delete(target);
+                    File.Move(temp, target);
+                    temp = null;
+                }
+                catch (Exception ex)
+                {
+                    ExtensionLog.Error("Ecriture du fichier de decouverte impossible.", ex);
+                }
+                finally
+                {
+                    if (temp != null)
+                    {
+                        try { File.Delete(temp); } catch (Exception) { }
+                    }
+                }
             }
         }
 
@@ -68,6 +89,11 @@ namespace ClaudeCodeVsMcp.Discovery
         {
             var result = new List<InstanceInfo>();
             if (!System.IO.Directory.Exists(Directory)) return result;
+
+            foreach (var orphan in System.IO.Directory.GetFiles(Directory, "instance-*.tmp"))
+            {
+                TryDelete(orphan);
+            }
 
             foreach (var file in System.IO.Directory.GetFiles(Directory, "instance-*.json"))
             {

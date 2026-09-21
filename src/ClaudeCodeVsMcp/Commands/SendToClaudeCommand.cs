@@ -57,39 +57,13 @@ namespace ClaudeCodeVsMcp.Commands
             var id = new CommandID(CommandSet, commandId);
             var item = new OleMenuCommand((s, e) => Execute(source), id);
 
-            // Le bouton est toujours visible : la decouvrabilite prime, et une commande
-            // conditionnellement invisible ne laisse aucune trace quand la condition se
-            // trompe. On ne pilote donc que l'activation, et en restant permissif : en cas
-            // de doute on laisse la commande active plutot que de la griser a tort.
-            item.BeforeQueryStatus += (s, e) =>
-            {
-                var command = s as OleMenuCommand;
-                if (command == null) return;
-
-                ThreadHelper.ThrowIfNotOnUIThread();
-                command.Enabled = HasSomethingToSend(source);
-            };
-
+            // Ni conditionnellement invisible, ni conditionnellement desactivee : une commande
+            // grisee ne fait rien et n'ecrit rien, ce qui est indiscernable d'un bug de
+            // routage ou d'enregistrement. Elle reste donc toujours active, et Execute
+            // journalise explicitement le cas « rien a envoyer ».
             service.AddCommand(item);
         }
 
-        private static bool HasSomethingToSend(string source)
-        {
-            ThreadHelper.ThrowIfNotOnUIThread();
-
-            try
-            {
-                var snapshot = SelectionReader.Read(source);
-                return snapshot != null && !snapshot.IsEmpty;
-            }
-            catch (Exception)
-            {
-                // BeforeQueryStatus est appele a chaque ouverture de menu : il doit rester muet.
-                // On active malgre tout : Execute signalera une selection vide dans le journal,
-                // ce qui est plus diagnosticable qu'une commande grisee sans explication.
-                return true;
-            }
-        }
 
         private void Execute(string source)
         {
@@ -101,6 +75,14 @@ namespace ClaudeCodeVsMcp.Commands
                 {
                     await _package.JoinableTaskFactory.SwitchToMainThreadAsync();
                     var snapshot = SelectionReader.Read(source);
+
+                    if (snapshot == null || snapshot.IsEmpty)
+                    {
+                        ExtensionLog.Warn("Rien a envoyer : aucune selection dans " +
+                                          (source == "output" ? "la fenetre Sortie" : "l'editeur") +
+                                          ". Selectionner du texte puis relancer la commande.");
+                        return;
+                    }
 
                     await TaskScheduler.Default;
                     var outcome = await ClaudeSender.SendAsync(snapshot, CancellationToken.None)

@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Runtime.InteropServices;
@@ -221,7 +222,43 @@ namespace ClaudeCodeVsMcp
             if (string.IsNullOrEmpty(solutionPath)) return new string[0];
 
             var directory = Path.GetDirectoryName(solutionPath);
-            return string.IsNullOrEmpty(directory) ? new string[0] : new[] { directory };
+            if (string.IsNullOrEmpty(directory)) return new string[0];
+
+            var folders = new List<string> { directory };
+
+            // Claude Code apparie une session a un IDE en comparant son repertoire de travail
+            // aux workspaceFolders annonces. Or il est couramment lance a la racine du depot
+            // alors que le .sln vit dans un sous-dossier : on annonce donc aussi la racine git,
+            // sans quoi l'appariement echoue pour une raison invisible a l'utilisateur.
+            var repositoryRoot = FindRepositoryRoot(directory);
+            if (repositoryRoot != null &&
+                !string.Equals(repositoryRoot, directory, StringComparison.OrdinalIgnoreCase))
+            {
+                folders.Add(repositoryRoot);
+            }
+
+            return folders.ToArray();
+        }
+
+        private static string FindRepositoryRoot(string startDirectory)
+        {
+            try
+            {
+                var current = new DirectoryInfo(startDirectory);
+                while (current != null)
+                {
+                    if (System.IO.Directory.Exists(Path.Combine(current.FullName, ".git")))
+                    {
+                        return current.FullName;
+                    }
+                    current = current.Parent;
+                }
+            }
+            catch (Exception)
+            {
+                // Chemin inaccessible : on se contente du dossier de la solution.
+            }
+            return null;
         }
 
         private JObject DescribeServer()

@@ -235,9 +235,17 @@ namespace ClaudeCodeVsMcp.Server
 
                 await DispatchAsync(context, body, requestContext, ct).ConfigureAwait(false);
             }
+            catch (Exception ex) when (IsClientGone(ex))
+            {
+                // Le client a ferme la connexion avant la fin de l'ecriture : condition normale
+                // pour un serveur HTTP (delai depasse cote client, fin de session, fermeture de
+                // Claude Code). Rien a reparer, donc pas d'erreur ni de pile d'appels : les
+                // journaliser ferait craindre une panne et noierait les vraies erreurs.
+                ExtensionLog.Info("Client deconnecte avant la fin de la reponse : " + Describe(context) + ".");
+            }
             catch (Exception ex)
             {
-                ExtensionLog.Error("Traitement de requete HTTP.", ex);
+                ExtensionLog.Error("Traitement de requete HTTP (" + Describe(context) + ").", ex);
                 try
                 {
                     await WriteJsonAsync(context, 500,
@@ -318,6 +326,45 @@ namespace ClaudeCodeVsMcp.Server
         {
             var path = (request.Url?.AbsolutePath ?? string.Empty).TrimEnd('/');
             return path.Equals("/mcp", StringComparison.OrdinalIgnoreCase);
+        }
+
+        /// <summary>
+        /// Distingue une deconnexion du client d'une vraie erreur serveur.
+        ///
+        /// Ecrire dans une connexion que le client vient de fermer leve HttpListenerException
+        /// (« connexion reseau qui n'existe pas »), IOException ou ObjectDisposedException selon
+        /// le moment. Aucune n'indique un defaut de notre cote.
+        /// </summary>
+        private static bool IsClientGone(Exception ex)
+        {
+            while (ex != null)
+            {
+                if (ex is HttpListenerException || ex is ObjectDisposedException || ex is IOException)
+                {
+                    return true;
+                }
+
+                var aggregate = ex as AggregateException;
+                ex = aggregate != null ? aggregate.GetBaseException() as Exception : ex.InnerException;
+
+                // GetBaseException peut renvoyer l'exception elle-meme : on evite la boucle infinie.
+                if (aggregate != null && ReferenceEquals(ex, aggregate)) return false;
+            }
+
+            return false;
+        }
+
+        /// <summary>Resume une requete pour le journal, sans son corps ni ses en-tetes.</summary>
+        private static string Describe(HttpListenerContext context)
+        {
+            try
+            {
+                return context.Request.HttpMethod + " " + (context.Request.Url?.AbsolutePath ?? "?");
+            }
+            catch (Exception)
+            {
+                return "requete indisponible";
+            }
         }
 
         private static bool IsAuthorized(HttpListenerRequest request)

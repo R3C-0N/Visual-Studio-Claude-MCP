@@ -63,4 +63,21 @@ if ($LASTEXITCODE -ne 0) {
     & $installer /quiet /instanceIds:$instanceId $vsix
     if ($LASTEXITCODE -ne 0) { throw "VSIXInstaller a echoue (code $LASTEXITCODE)." }
 }
-Write-Host "Installe. Relancer Visual Studio, puis : pwsh tools\Smoke-Test.ps1" -ForegroundColor Green
+# VSIXInstaller peut sortir en code 0 SANS avoir rien installe, notamment faute de droits
+# suffisants. On verifie donc ce qui est reellement deploye plutot que de croire le code retour.
+$expected = ([xml](Get-Content (Join-Path $root 'src\ClaudeCodeVsMcp\source.extension.vsixmanifest'))).PackageManifest.Metadata.Identity.Version
+$extensionsRoot = Join-Path $env:LOCALAPPDATA "Microsoft\VisualStudio8.0_$instanceId\Extensions"
+
+$deployed = Get-ChildItem $extensionsRoot -Recurse -Filter 'extension.vsixmanifest' -ErrorAction SilentlyContinue |
+    ForEach-Object { try { ([xml](Get-Content $_.FullName)).PackageManifest.Metadata.Identity } catch { } } |
+    Where-Object { $_.Id -eq $identity } |
+    Select-Object -ExpandProperty Version -First 1
+
+if ($deployed -ne $expected) {
+    throw ("Installation non effective : version attendue $expected, version deployee " +
+           "$(if ($deployed) { $deployed } else { 'aucune' }). " +
+           "VSIXInstaller sort parfois en succes sans rien faire, typiquement faute de droits : " +
+           "relancer ce script depuis un terminal eleve.")
+}
+
+Write-Host "Installe en $deployed. Relancer Visual Studio, puis : pwsh tools\Smoke-Test.ps1" -ForegroundColor Green

@@ -33,10 +33,16 @@ namespace ClaudeCodeVsMcp.Server
         internal static readonly string ServerVersion =
             typeof(McpDispatcher).Assembly.GetName().Version.ToString(3);
 
-        /// <summary>Versions du protocole MCP supportees, de la plus recente a la plus ancienne.</summary>
-        private static readonly string[] SupportedProtocols =
+        /// <summary>
+        /// Versions du protocole MCP connues, de la plus recente a la plus ancienne.
+        ///
+        /// La surface reellement exposee (initialize, tools/list, tools/call) est identique
+        /// d'une version a l'autre : cette liste sert a savoir ce qu'on a deja vu, pas a
+        /// restreindre. Voir Initialize pour la politique de negociation.
+        /// </summary>
+        private static readonly string[] KnownProtocols =
         {
-            "2025-06-18", "2025-03-26", "2024-11-05"
+            "2025-11-25", "2025-06-18", "2025-03-26", "2024-11-05"
         };
 
         private readonly ToolRegistry _registry;
@@ -109,10 +115,24 @@ namespace ClaudeCodeVsMcp.Server
         private static JObject Initialize(JObject parameters)
         {
             var requested = (string)parameters?["protocolVersion"];
-            var negotiated = SupportedProtocols.Contains(requested) ? requested : SupportedProtocols[0];
+
+            // On renvoie la version demandee par le client, meme inconnue de nous.
+            //
+            // Retrograder est pire que de suivre : la spec MCP prevoit que le client se
+            // deconnecte si le serveur propose une version qu'il ne gere pas. Une
+            // retrogradation silencieuse produisait donc un echec de connexion, observe avec
+            // un client demandant 2025-11-25. Comme la surface exposee ne varie pas entre ces
+            // versions, suivre le client est sans risque et evite un refus net.
+            var negotiated = string.IsNullOrEmpty(requested) ? KnownProtocols[0] : requested;
+
+            if (!KnownProtocols.Contains(negotiated))
+            {
+                ExtensionLog.Warn("initialize : version de protocole inconnue " + negotiated +
+                                  ", renvoyee telle quelle. A verifier si un outil se comporte mal.");
+            }
 
             ExtensionLog.Info("initialize : le client demande le protocole " + (requested ?? "(non precise)") +
-                              ", version negociee " + negotiated + ".");
+                              ", version retenue " + negotiated + ".");
 
             return new JObject
             {

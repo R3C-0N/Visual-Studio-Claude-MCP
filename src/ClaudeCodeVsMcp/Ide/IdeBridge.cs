@@ -243,7 +243,14 @@ namespace ClaudeCodeVsMcp.Ide
             await _sendGate.WaitAsync(ct).ConfigureAwait(false);
             try
             {
-                if (socket.State != WebSocketState.Open) return;
+                if (socket.State != WebSocketState.Open)
+                {
+                    // Reponse perdue : sans cette trace, un echec de negociation ressemble a
+                    // une absence de reponse et se diagnostique tres mal.
+                    ExtensionLog.Warn("Reponse non envoyee : la connexion IDE etait deja fermee (etat " +
+                                      socket.State + ").");
+                    return;
+                }
                 await socket.SendAsync(new ArraySegment<byte>(bytes), WebSocketMessageType.Text, true, ct)
                     .ConfigureAwait(false);
             }

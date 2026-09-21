@@ -190,3 +190,25 @@ pas embarquée dans le VSIX, ce qui évite les conflits de redirection de liaiso
 | `claude mcp list` échoue | Vérifier d'abord avec `tools\Smoke-Test.ps1` : isole transport et configuration client |
 | Port 5230 déjà pris | `Get-NetTCPConnection -LocalPort 5230`, ou définir `CLAUDE_VS_MCP_HUB_PORT` |
 | Mauvaise instance pilotée | `list_instances` puis `use_instance` |
+
+## Licence
+
+[PolyForm Noncommercial 1.0.0](LICENSE) — voir le fichier `LICENSE`.
+
+Vous pouvez utiliser, modifier, redistribuer et forker ce code **à des fins non commerciales** :
+usage personnel, étude, recherche, projet amateur, ou au sein d'une organisation à but non lucratif.
+
+En revanche, **tout usage commercial est exclu** — et cela va plus loin que la simple revente :
+une entreprise ne peut pas l'utiliser pour son activité, même en interne et même sans en tirer
+directement de revenu. C'est le choix assumé de cette licence.
+
+Deux points à connaître :
+
+- PolyForm Noncommercial **n'est pas une licence open source** au sens de l'OSI. GitHub l'affichera
+  comme « Other ». C'est inhérent à toute clause non commerciale, quelle qu'elle soit.
+- Elle est en revanche **conçue pour du logiciel**, contrairement aux licences Creative Commons non
+  commerciales, qui ne traitent ni le code source, ni les brevets, ni la garantie — Creative Commons
+  déconseille elle-même leur usage pour du code.
+
+Pour un usage commercial, contactez le détenteur des droits : rien n'empêche l'octroi d'une licence
+distincte.

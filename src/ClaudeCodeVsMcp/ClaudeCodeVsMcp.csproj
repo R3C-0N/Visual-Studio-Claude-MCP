@@ -93,6 +93,15 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- Embarque la licence dans le VSIX pour qu'elle soit lisible depuis le gestionnaire
+         d'extensions. Le fichier est copie depuis la racine du depot par CopyLicenseForVsix :
+         un Link ne suffit pas, le SDK exige le fichier a la racine de l'archive (VSSDK1310). -->
+    <Content Include="LICENSE.txt">
+      <IncludeInVSIX>true</IncludeInVSIX>
+    </Content>
+  </ItemGroup>
+
+  <ItemGroup>
     <!-- Compile la table de commandes et l'embarque sous le nom de ressource attendu par
          ProvideMenuResource sur le package. -->
     <VSCTCompile Include="ClaudeCodeVsMcpPackage.vsct">
@@ -121,6 +130,15 @@
   <!-- Source unique de verite pour la version : l'attribut Version de source.extension.vsixmanifest.
        Les attributs d'assembly en sont derives a la compilation, ce qui evite d'avoir a tenir
        plusieurs fichiers en phase a chaque bump. -->
+  <!-- La licence n'existe qu'une fois dans le depot, a la racine. On en place une copie dans
+       le projet pour le packaging ; cette copie n'est pas versionnee. -->
+  <Target Name="CopyLicenseForVsix" BeforeTargets="BeforeBuild">
+    <Copy SourceFiles="$(MSBuildProjectDirectory)\..\..\LICENSE"
+          DestinationFiles="$(MSBuildProjectDirectory)\LICENSE.txt"
+          SkipUnchangedFiles="true"
+          Condition="Exists('$(MSBuildProjectDirectory)\..\..\LICENSE')" />
+  </Target>
+
   <Target Name="GenerateVersionInfo" BeforeTargets="BeforeCompile">
     <XmlPeek XmlInputPath="source.extension.vsixmanifest"
              Query="/vsx:PackageManifest/vsx:Metadata/vsx:Identity/@Version"

@@ -12,3 +12,6 @@ packages/
 # VSIX
 *.vsix
 *.binlog
+
+# Copie de la licence generee pour le packaging du VSIX : la source est ./LICENSE
+src/ClaudeCodeVsMcp/LICENSE.txt

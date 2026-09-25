@@ -79,6 +79,13 @@
     <Reference Include="System.Web.Extensions" />
     <Reference Include="System.Xml" />
     <Reference Include="System.Xml.Linq" />
+    <!-- Pilotage generique de l'interface : parcours des AutomationPeer WPF (UiTreeWalker). -->
+    <Reference Include="PresentationCore" />
+    <Reference Include="PresentationFramework" />
+    <Reference Include="WindowsBase" />
+    <Reference Include="System.Xaml" />
+    <Reference Include="UIAutomationProvider" />
+    <Reference Include="UIAutomationTypes" />
   </ItemGroup>
 
   <!-- Globbing: evite d'enumerer chaque fichier, contrairement au template VSIX classique. -->

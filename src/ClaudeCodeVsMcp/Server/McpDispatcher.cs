@@ -152,7 +152,9 @@ namespace ClaudeCodeVsMcp.Server
                     "pour fixer la cible ; sinon les outils s'appliquent a l'unique instance ouverte. " +
                     "Les builds et les commandes de debogage sont asynchrones : un statut 'running' n'est pas une " +
                     "erreur, c'est un etat legitime a re-interroger. " +
-                    "evaluate, get_locals et get_stack exigent que le debogueur soit arrete sur un point d'arret."
+                    "evaluate, get_locals et get_stack exigent que le debogueur soit arrete sur un point d'arret. " +
+                    "Pour une fenetre sans outil dedie (Explorateur de tests...), ui_snapshot donne l'arbre des controles " +
+                    "avec des ids, ui_action agit dessus ; execute_command lance une commande nommee de Visual Studio."
             };
         }
 

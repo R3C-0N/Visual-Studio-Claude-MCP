@@ -30,6 +30,7 @@ namespace ClaudeCodeVsMcp.Tools
             InspectTools.Register(registry);
             OutputTools.Register(registry);
             SelectionTools.Register(registry);
+            UiTools.Register(registry);
 
             registry.Add(
                 "server_info",

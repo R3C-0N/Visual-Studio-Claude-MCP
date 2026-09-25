@@ -18,7 +18,7 @@ $ErrorActionPreference = 'Stop'
 $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer\vswhere.exe'
 if (-not (Test-Path $vswhere)) { throw "vswhere introuvable : $vswhere" }
 
-$msbuild = & $vswhere -latest -prerelease -products * -requires Microsoft.Component.MSBuild `
+$msbuild = & $vswhere -latest -all -prerelease -products * -requires Microsoft.Component.MSBuild `
     -find 'MSBuild\**\Bin\MSBuild.exe' | Select-Object -First 1
 if (-not $msbuild) { throw "MSBuild introuvable via vswhere." }
 
@@ -45,8 +45,8 @@ if (Get-Process devenv -ErrorAction SilentlyContinue) {
     throw "Fermer Visual Studio avant d'installer l'extension."
 }
 
-$installPath = & $vswhere -latest -prerelease -property installationPath
-$instanceId = & $vswhere -latest -prerelease -property instanceId
+$installPath = & $vswhere -latest -all -prerelease -property installationPath
+$instanceId = & $vswhere -latest -all -prerelease -property instanceId
 $installer = Join-Path $installPath 'Common7\IDE\VSIXInstaller.exe'
 
 # VSIXInstaller met a jour en place des que la version du manifeste est superieure a celle

@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Threading.Tasks;
 using ClaudeCodeVsMcp.Infrastructure;
 using ClaudeCodeVsMcp.Server;
@@ -195,21 +196,134 @@ namespace ClaudeCodeVsMcp.Tools
                 "Arrete la session de debogage et revient en mode conception.",
                 SchemaBuilder.New()
                     .Instance()
+                    .Bool("force",
+                        "Terminer directement les processus debogues plutot que d'emettre la commande " +
+                        "Arreter de Visual Studio, qui ouvre selon le projet une confirmation modale " +
+                        "bloquant toute automation. Mettre a false si la session est attachee a un " +
+                        "processus qu'il ne faut pas tuer.",
+                        defaultValue: true)
                     .Int("wait_ms", "Attente du retour en mode conception.", defaultValue: 15000)
                     .Build(),
                 async (args, ctx, ct) =>
                 {
+                    var force = Args.Bool(args, "force", true);
                     var waitMs = Clamp(Args.Int(args, "wait_ms", 15000));
+
+                    // Rien a arreter : le signaler plutot qu'attendre une transition qui ne viendra pas.
+                    var current = await UiThread.RunAsync(() => BuildState(), ct);
+                    if ((string)current["mode"] == "Design")
+                    {
+                        current["alreadyStopped"] = true;
+                        return current;
+                    }
+
                     var transition = watcher.Arm();
 
-                    await UiThread.RunAsync(() =>
-                    {
-                        DteProvider.Dte.Debugger.Stop(false);
-                        return true;
-                    }, ct);
+                    var targets = force
+                        ? await UiThread.RunAsync(() => DebuggedProcesses(), ct)
+                        : new List<DebuggedProcess>();
 
-                    return await AwaitTransitionAsync(transition, waitMs, ct).ConfigureAwait(false);
+                    var terminated = new JArray();
+                    var failed = new JArray();
+
+                    foreach (var target in targets)
+                    {
+                        // Hors thread UI : la terminaison ne passe pas par l'automation, donc
+                        // par aucune boite de dialogue. Visual Studio voit le processus mourir
+                        // et referme la session de lui-meme.
+                        if (TryKill(target)) terminated.Add(Describe(target));
+                        else failed.Add(Describe(target));
+                    }
+
+                    // Mode normal, ou aucun processus terminable : on emet la commande de Visual
+                    // Studio, quitte a ce qu'elle demande confirmation.
+                    if (terminated.Count == 0)
+                    {
+                        await UiThread.RunAsync(() =>
+                        {
+                            DteProvider.Dte.Debugger.Stop(false);
+                            return true;
+                        }, ct);
+                    }
+
+                    var state = await AwaitTransitionAsync(transition, waitMs, ct).ConfigureAwait(false);
+
+                    if (terminated.Count > 0) state["terminatedProcesses"] = terminated;
+                    if (failed.Count > 0)
+                    {
+                        state["notTerminated"] = failed;
+                        state["hint"] = "Certains processus debogues n'ont pas pu etre termines, un " +
+                            "processus eleve par exemple. Visual Studio peut demander confirmation.";
+                    }
+
+                    return state;
                 });
+        }
+
+        /// <summary>Un processus sous le controle du debogueur.</summary>
+        private sealed class DebuggedProcess
+        {
+            internal int Id;
+            internal string Name;
+        }
+
+        /// <summary>Processus actuellement debogues, lus sur le thread UI.</summary>
+        private static List<DebuggedProcess> DebuggedProcesses()
+        {
+            Microsoft.VisualStudio.Shell.ThreadHelper.ThrowIfNotOnUIThread();
+
+            var list = new List<DebuggedProcess>();
+
+            var processes = DteProvider.Dte.Debugger.DebuggedProcesses;
+            if (processes == null) return list;
+
+            foreach (EnvDTE.Process process in processes)
+            {
+                try
+                {
+                    list.Add(new DebuggedProcess { Id = process.ProcessID, Name = process.Name });
+                }
+                catch (Exception)
+                {
+                    // Processus deja parti entre l'enumeration et la lecture.
+                }
+            }
+
+            return list;
+        }
+
+        /// <summary>
+        /// Terminaison brutale, equivalente a ce que fait la commande Arreter : aucun code de
+        /// sortie propre n'est execute dans le programme debogue.
+        /// </summary>
+        private static bool TryKill(DebuggedProcess target)
+        {
+            try
+            {
+                using (var process = System.Diagnostics.Process.GetProcessById(target.Id))
+                {
+                    process.Kill();
+                    return true;
+                }
+            }
+            catch (ArgumentException)
+            {
+                return true; // Deja termine.
+            }
+            catch (Exception ex)
+            {
+                ExtensionLog.Error("Terminaison du processus debogue " + target.Id, ex);
+                return false;
+            }
+        }
+
+        private static JObject Describe(DebuggedProcess target)
+        {
+            return new JObject
+            {
+                ["pid"] = target.Id,
+                ["name"] = target.Name
+            };
         }
 
         private static int Clamp(int waitMs)

@@ -73,10 +73,43 @@ C'est tout. Demandez à Claude de compiler votre solution pour valider.
 | Inspection | `evaluate`, `get_locals`, `get_stack` |
 | Sorties | `list_output_panes`, `get_output_pane` |
 | Sélection | `get_selection`, `take_pending_context` |
+| Interface | `ui_windows`, `ui_snapshot`, `ui_action`, `execute_command` |
 | Instances | `list_instances`, `use_instance`, `server_info` |
 
 Les opérations longues — compilation, exécution — acceptent un `wait_ms`. Au-delà, la réponse porte
 le statut `running` : ce n'est pas une erreur mais un état à ré-interroger.
+
+`debug_stop` termine directement les processus débogués au lieu d'émettre la commande *Arrêter le
+débogage* de Visual Studio, qui ouvre selon le projet une confirmation modale bloquant toute
+automatisation. Passer `force: false` pour retrouver la commande d'origine — utile si la session
+est attachée à un processus qu'il ne faut pas tuer.
+
+### Piloter n'importe quelle fenêtre
+
+Les fenêtres sans API d'automatisation — l'Explorateur de tests en premier — se pilotent par leur
+interface. `ui_snapshot` renvoie l'arbre des contrôles WPF en JSON : chaque nœud porte un `id`, son
+type, son nom, sa valeur, son état (`toggle`, `expanded`, `selected`) et la liste des actions qu'il
+accepte. `ui_action` applique une action à un `id` : `click`, `invoke`, `toggle`, `expand`,
+`collapse`, `select`, `set_value`, `scroll_into_view`, `focus`.
+
+```
+ui_snapshot  window: "Test Explorer"            → arbre : barre d'outils, arborescence des tests
+ui_action    id: 412, action: "expand"           → déplie un projet
+ui_snapshot  root_id: 412                        → ses tests, désormais matérialisés
+ui_action    id: 418, action: "select"           → sélectionne un test
+execute_command command: "TestExplorer.RunSelectedTests"
+```
+
+`ui_windows` liste les légendes des fenêtres ouvertes, pour savoir quoi passer à `window`. Par
+défaut `interactive_only` ne garde que les nœuds nommés, valorisés ou actionnables et aplatit les
+conteneurs muets ; `filter` réduit encore l'arbre aux nœuds contenant un texte. Les `id` restent
+valables tant que le contrôle existe : après une action qui recompose la fenêtre, refaire un
+snapshot. Les listes virtualisées n'exposent que les éléments affichés : déplier ou faire défiler,
+puis reprendre un snapshot.
+
+`execute_command` exécute une commande nommée de Visual Studio (`View.TestExplorer`,
+`TestExplorer.RunAllTests`, `Edit.FormatDocument`…), ce qui évite souvent de passer par
+l'interface.
 
 ---
 
@@ -136,6 +169,41 @@ secondes, sans reconfiguration.
 
 ---
 
+## Ne plus jamais avoir à se reconnecter : le relais stdio
+
+Claude Code ne retente une connexion HTTP que brièvement : 3 essais à l'ouverture de la session,
+environ 30 secondes après une coupure. Passé ce délai, le serveur est marqué en échec jusqu'à
+un `/mcp` → **Reconnect** manuel. C'est ce qui arrive si Claude Code démarre avant Visual Studio,
+ou si Visual Studio est fermé un moment.
+
+`tools\vs-mcp-relay.mjs` règle ça. Claude Code le lance comme un serveur **stdio**, donc
+toujours connecté, et le relais transmet chaque appel au hub au moment où il arrive :
+
+- sans Visual Studio, un appel d'outil attend jusqu'à 30 s, ce qui couvre une reprise de hub,
+  puis répond « Visual Studio n'est pas joignable » au lieu de faire échouer le serveur ;
+- la liste d'outils est gardée en cache et servie même quand Visual Studio est fermé ;
+- dès que Visual Studio revient, le relais prévient Claude Code (`tools/list_changed`) : il n'y a
+  rien à faire.
+
+Le jeton est relu dans `%APPDATA%\claude-vs-mcp\token` à chaque requête, il n'apparaît donc plus
+dans la configuration. Node 18 ou plus, aucune dépendance.
+
+```powershell
+claude mcp remove visual-studio --scope user
+claude mcp add visual-studio --scope user -- node "<chemin>\tools\vs-mcp-relay.mjs"
+```
+
+| Variable | Rôle | Défaut |
+|---|---|---|
+| `CLAUDE_VS_MCP_URL` | URL du hub | `http://127.0.0.1:<port>/mcp` |
+| `CLAUDE_VS_MCP_HUB_PORT` | Port du hub, si l'URL n'est pas donnée | `5230` |
+| `CLAUDE_VS_MCP_TOKEN` | Jeton, à la place du fichier | relu dans `%APPDATA%` |
+| `CLAUDE_VS_MCP_WAIT_MS` | Attente maximale de Visual Studio par appel d'outil | `30000` |
+
+Le journal du relais part sur stderr, dans les logs MCP de Claude Code.
+
+---
+
 ## Sécurité
 
 - Écoute sur `127.0.0.1` uniquement, jamais sur une interface externe.
@@ -169,7 +237,12 @@ code auquel vous ne faites pas confiance.
 - **Une boîte de dialogue modale fige l'automatisation.** Chaque outil a donc un délai maximal.
   Pensez à activer le rechargement automatique des fichiers modifiés hors de l'éditeur, sinon
   chaque modification faite par Claude ouvre une fenêtre.
-- **Le Test Explorer n'a pas d'API publique** : passez par `dotnet test`.
+- **Le Test Explorer n'a pas d'API publique** : il se pilote par `ui_snapshot` / `ui_action` ou par
+  `execute_command` (`TestExplorer.RunAllTests`…). Pour un résultat lisible, `dotnet test` reste
+  plus simple.
+- **`ui_snapshot` ne voit que l'interface WPF** : les zones Win32 ou WinForms hébergées et les
+  boîtes de dialogue natives n'y apparaissent pas. Les éléments non affichés d'une liste
+  virtualisée non plus.
 - Un seul outil s'exécute à la fois par instance : l'automatisation de Visual Studio tolère mal la
   réentrance.
 

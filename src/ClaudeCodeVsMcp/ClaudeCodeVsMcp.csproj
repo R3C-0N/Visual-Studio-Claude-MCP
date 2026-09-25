@@ -106,6 +106,13 @@
     <Content Include="LICENSE.txt">
       <IncludeInVSIX>true</IncludeInVSIX>
     </Content>
+    <!-- Icone et apercu declares dans le manifeste (Icon, PreviewImage). Source : assets\ a la racine. -->
+    <Content Include="Resources\icon-90.png">
+      <IncludeInVSIX>true</IncludeInVSIX>
+    </Content>
+    <Content Include="Resources\preview-200.png">
+      <IncludeInVSIX>true</IncludeInVSIX>
+    </Content>
   </ItemGroup>
 
   <ItemGroup>

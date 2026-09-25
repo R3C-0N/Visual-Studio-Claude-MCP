@@ -1,12 +1,14 @@
 <?xml version="1.0" encoding="utf-8"?>
 <PackageManifest Version="2.0.0" xmlns="http://schemas.microsoft.com/developer/vsx-schema/2011" xmlns:d="http://schemas.microsoft.com/developer/vsx-schema-design/2011">
   <Metadata>
-    <Identity Id="ClaudeCodeVsMcp.CD41CDB5-D6BB-4351-972A-BE5912703F9C" Version="0.5.1" Language="en-US" Publisher="MMedard" />
+    <Identity Id="ClaudeCodeVsMcp.CD41CDB5-D6BB-4351-972A-BE5912703F9C" Version="0.5.2" Language="en-US" Publisher="MMedard" />
     <DisplayName>Claude Code MCP Bridge</DisplayName>
-    <Description xml:space="preserve">Expose Visual Studio (build, erreurs, debogueur, points d'arret, variables, fichiers) a Claude Code via un serveur MCP HTTP local.</Description>
+    <Description xml:space="preserve">Lets Claude Code build, debug and drive Visual Studio through MCP: build the solution and read errors, control the debugger, set breakpoints, inspect locals and the call stack, read output panes, and act on any tool window such as Test Explorer. Runs inside Visual Studio, listens only on localhost with a per-machine token, and supports several instances side by side.</Description>
     <MoreInfo>https://github.com/R3C-0N/Visual-Studio-Claude-MCP</MoreInfo>
     <License>LICENSE.txt</License>
-    <Tags>MCP, Claude, AI, automation, debugger</Tags>
+    <Icon>Resources\icon-90.png</Icon>
+    <PreviewImage>Resources\preview-200.png</PreviewImage>
+    <Tags>Claude, Claude Code, MCP, Model Context Protocol, AI, AI Assistant, Agent, Anthropic, Debugger, Test Explorer</Tags>
   </Metadata>
   <Installation>
     <!-- API 17.x : VS 2022 (17.x) ET VS 2026 (18.x) qui conserve la compatibilite d'API 17.x. -->

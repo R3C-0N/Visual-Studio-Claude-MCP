@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <PackageManifest Version="2.0.0" xmlns="http://schemas.microsoft.com/developer/vsx-schema/2011" xmlns:d="http://schemas.microsoft.com/developer/vsx-schema-design/2011">
   <Metadata>
-    <Identity Id="ClaudeCodeVsMcp.CD41CDB5-D6BB-4351-972A-BE5912703F9C" Version="0.5.0" Language="en-US" Publisher="m.medard" />
+    <Identity Id="ClaudeCodeVsMcp.CD41CDB5-D6BB-4351-972A-BE5912703F9C" Version="0.5.1" Language="en-US" Publisher="MMedard" />
     <DisplayName>Claude Code MCP Bridge</DisplayName>
     <Description xml:space="preserve">Expose Visual Studio (build, erreurs, debogueur, points d'arret, variables, fichiers) a Claude Code via un serveur MCP HTTP local.</Description>
     <MoreInfo>https://github.com/R3C-0N/Visual-Studio-Claude-MCP</MoreInfo>

@@ -3,7 +3,7 @@
   <Metadata>
     <Identity Id="ClaudeCodeVsMcp.CD41CDB5-D6BB-4351-972A-BE5912703F9C" Version="0.5.3" Language="en-US" Publisher="MMedard" />
     <DisplayName>Claude Code MCP Bridge</DisplayName>
-    <Description xml:space="preserve">Lets Claude Code build, debug and drive Visual Studio through MCP: build the solution and read errors, control the debugger, set breakpoints, inspect locals and the call stack, read output panes, and act on any tool window such as Test Explorer. Runs inside Visual Studio, listens only on localhost with a per-machine token, and supports several instances side by side.</Description>
+    <Description xml:space="preserve">Lets Claude Code build, debug and drive Visual Studio through MCP: read build errors, control the debugger and breakpoints, inspect locals and the call stack, and act on any tool window. Local only, token-protected, works across several instances.</Description>
     <MoreInfo>https://github.com/R3C-0N/Visual-Studio-Claude-MCP</MoreInfo>
     <License>LICENSE.txt</License>
     <Icon>Resources\icon-90.png</Icon>

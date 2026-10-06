@@ -65,7 +65,19 @@ Write-Host "VsixPublisher : $publisher" -ForegroundColor DarkGray
 
 # --- 3. VSIX ----------------------------------------------------------------
 
-$version = ([xml](Get-Content $manifest)).PackageManifest.Metadata.Identity.Version
+$metadata = ([xml](Get-Content $manifest)).PackageManifest.Metadata
+$version = $metadata.Identity.Version
+
+# Regles verifiees par VsixPublisher, controlees ici pour echouer des -WhatIf.
+$description = $metadata.Description.'#text'
+if (-not $description) { $description = [string]$metadata.Description }
+if (-not $description -or $description.Length -ge 280) {
+    throw "La description du manifeste doit faire moins de 280 caracteres (actuellement $($description.Length))."
+}
+$longTags = ([string]$metadata.Tags -split ';') | Where-Object { $_.Trim().Length -gt 50 }
+if ($longTags) {
+    throw "Tag de plus de 50 caracteres (les tags se separent par des points-virgules) : $($longTags -join ' | ')"
+}
 
 if (-not (Test-Path $vsixPath)) {
     throw "VSIX introuvable : $vsixPath. Compiler d'abord en Release."

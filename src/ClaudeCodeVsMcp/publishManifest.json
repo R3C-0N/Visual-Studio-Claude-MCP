@@ -2,7 +2,7 @@
   "$schema": "http://json.schemastore.org/vsix-publish",
   "categories": [ "coding", "build", "testing" ],
   "identity": {
-    "internalName": "ClaudeCodeMcpBridge"
+    "internalName": "claude-vs-mcp-bridge"
   },
   "overview": "../../README.md",
   "priceCategory": "free",

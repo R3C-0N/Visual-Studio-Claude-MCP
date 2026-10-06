@@ -8,7 +8,7 @@
     <License>LICENSE.txt</License>
     <Icon>Resources\icon-90.png</Icon>
     <PreviewImage>Resources\preview-200.png</PreviewImage>
-    <Tags>Claude, Claude Code, MCP, Model Context Protocol, AI, AI Assistant, Agent, Anthropic, Debugger, Test Explorer</Tags>
+    <Tags>Claude;Claude Code;MCP;Model Context Protocol;AI;AI Assistant;Agent;Anthropic;Debugger;Test Explorer</Tags>
   </Metadata>
   <Installation>
     <!-- API 17.x : VS 2022 (17.x) ET VS 2026 (18.x) qui conserve la compatibilite d'API 17.x. -->

@@ -15,3 +15,6 @@ packages/
 
 # Copie de la licence generee pour le packaging du VSIX : la source est ./LICENSE
 src/ClaudeCodeVsMcp/LICENSE.txt
+
+# Jeton de publication sur le Marketplace (TOKEN=...) : ne jamais le versionner
+.env

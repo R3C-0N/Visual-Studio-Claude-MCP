@@ -1,0 +1,13 @@
+{
+  "$schema": "http://json.schemastore.org/vsix-publish",
+  "categories": [ "coding", "debug" ],
+  "identity": {
+    "internalName": "ClaudeCodeMcpBridge"
+  },
+  "overview": "../../README.md",
+  "priceCategory": "free",
+  "publisher": "MMedard",
+  "private": false,
+  "qna": true,
+  "repo": "https://github.com/R3C-0N/Visual-Studio-Claude-MCP"
+}

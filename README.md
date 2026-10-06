@@ -74,15 +74,36 @@ C'est tout. Demandez à Claude de compiler votre solution pour valider.
 | Sorties | `list_output_panes`, `get_output_pane` |
 | Sélection | `get_selection`, `take_pending_context` |
 | Interface | `ui_windows`, `ui_snapshot`, `ui_action`, `execute_command` |
+| Boîtes de dialogue | `get_dialog`, `answer_dialog` |
 | Instances | `list_instances`, `use_instance`, `server_info` |
 
 Les opérations longues — compilation, exécution — acceptent un `wait_ms`. Au-delà, la réponse porte
 le statut `running` : ce n'est pas une erreur mais un état à ré-interroger.
 
 `debug_stop` termine directement les processus débogués au lieu d'émettre la commande *Arrêter le
-débogage* de Visual Studio, qui ouvre selon le projet une confirmation modale bloquant toute
-automatisation. Passer `force: false` pour retrouver la commande d'origine — utile si la session
-est attachée à un processus qu'il ne faut pas tuer.
+débogage* de Visual Studio, qui ouvre selon le projet une confirmation modale. Passer
+`force: false` pour retrouver la commande d'origine — utile si la session est attachée à un
+processus qu'il ne faut pas tuer. Si Visual Studio demande alors confirmation, `debug_stop` répond
+**Oui** et le signale dans `confirmedDialogs` ; avec `confirm: false`, il rend la main avec le
+statut `dialog_open` et le contenu de la boîte.
+
+### Boîtes de dialogue modales
+
+Tant qu'une boîte modale est ouverte, Visual Studio ne traite plus aucune commande. L'extension
+les détecte sans passer par le thread UI qu'elles bloquent :
+
+- les outils de débogage (`debug_start`, `debug_continue`, `debug_step`, `debug_pause`,
+  `debug_stop`) rendent la main dès qu'une boîte apparaît, avec le statut `dialog_open`, au lieu
+  d'attendre leur délai ;
+- tout autre outil dont la commande reste bloquée par une boîte (une compilation lancée pendant
+  le débogage ouvre « Voulez-vous arrêter le débogage ? ») rend la main en moins d'une seconde
+  avec l'erreur `DIALOG_OPEN`, qui décrit la boîte. La commande reprend dès qu'on y a répondu ;
+- `get_dialog` lit les boîtes ouvertes (titre, message, boutons) et `answer_dialog` clique un
+  bouton par son libellé, son `id`, ou une réponse standard indépendante de la langue (`yes`,
+  `no`, `ok`, `cancel`…).
+
+Ces deux outils s'exécutent même quand un autre appel est en cours sur l'instance. Les boîtes
+natives (MessageBox) sont lues par Win32, les boîtes WPF par UI Automation.
 
 ### Piloter n'importe quelle fenêtre
 
@@ -234,8 +255,9 @@ code auquel vous ne faites pas confiance.
   la fenêtre Points d'arrêt.
 - **La sortie d'une application console lancée dans une console externe** n'apparaît pas dans
   `get_output_pane`.
-- **Une boîte de dialogue modale fige l'automatisation.** Chaque outil a donc un délai maximal.
-  Pensez à activer le rechargement automatique des fichiers modifiés hors de l'éditeur, sinon
+- **Une boîte de dialogue modale fige l'automatisation** tant qu'on n'y a pas répondu
+  (`answer_dialog`). Les boîtes de dialogue de tâche (*TaskDialog*) ne laissent lire ni leur
+  texte ni leurs boutons : `answer_dialog` y tente les réponses standard à l'aveugle. Pensez à activer le rechargement automatique des fichiers modifiés hors de l'éditeur, sinon
   chaque modification faite par Claude ouvre une fenêtre.
 - **Le Test Explorer n'a pas d'API publique** : il se pilote par `ui_snapshot` / `ui_action` ou par
   `execute_command` (`TestExplorer.RunAllTests`…). Pour un résultat lisible, `dotnet test` reste

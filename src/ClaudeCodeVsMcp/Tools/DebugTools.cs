@@ -92,14 +92,14 @@ namespace ClaudeCodeVsMcp.Tools
 
                     var transition = watcher.Arm();
 
-                    await UiThread.RunAsync(() =>
+                    var command = UiThread.RunAsync(() =>
                     {
                         // Go(false) : jamais true, qui bloquerait le thread UI et donc le debogueur lui-meme.
                         DteProvider.Dte.Debugger.Go(false);
                         return true;
                     }, ct);
 
-                    return await AwaitTransitionAsync(transition, waitMs, ct).ConfigureAwait(false);
+                    return await AwaitTransitionAsync(command, transition, waitMs, false, ct).ConfigureAwait(false);
                 });
 
             registry.Add(
@@ -114,13 +114,13 @@ namespace ClaudeCodeVsMcp.Tools
                     var waitMs = Clamp(Args.Int(args, "wait_ms", 30000));
                     var transition = watcher.Arm();
 
-                    await UiThread.RunAsync(() =>
+                    var command = UiThread.RunAsync(() =>
                     {
                         DteProvider.RequireBreakMode().Go(false);
                         return true;
                     }, ct);
 
-                    return await AwaitTransitionAsync(transition, waitMs, ct).ConfigureAwait(false);
+                    return await AwaitTransitionAsync(command, transition, waitMs, false, ct).ConfigureAwait(false);
                 });
 
             registry.Add(
@@ -145,7 +145,7 @@ namespace ClaudeCodeVsMcp.Tools
                     {
                         var transition = watcher.Arm();
 
-                        await UiThread.RunAsync(() =>
+                        var command = UiThread.RunAsync(() =>
                         {
                             var debugger = DteProvider.RequireBreakMode();
                             switch (kind)
@@ -157,11 +157,11 @@ namespace ClaudeCodeVsMcp.Tools
                             return true;
                         }, ct);
 
-                        last = await AwaitTransitionAsync(transition, waitMs, ct).ConfigureAwait(false);
+                        last = await AwaitTransitionAsync(command, transition, waitMs, false, ct).ConfigureAwait(false);
                         done++;
 
-                        // Programme termine ou toujours en cours d'execution : inutile d'insister.
-                        if ((string)last["mode"] != "Break") break;
+                        // Programme termine, toujours en cours d'execution ou boite ouverte : inutile d'insister.
+                        if ((string)last["mode"] != "Break" || last["dialog"] != null) break;
                     }
 
                     last = last ?? new JObject();
@@ -182,32 +182,43 @@ namespace ClaudeCodeVsMcp.Tools
                     var waitMs = Clamp(Args.Int(args, "wait_ms", 10000));
                     var transition = watcher.Arm();
 
-                    await UiThread.RunAsync(() =>
+                    var command = UiThread.RunAsync(() =>
                     {
                         DteProvider.Dte.Debugger.Break(false);
                         return true;
                     }, ct);
 
-                    return await AwaitTransitionAsync(transition, waitMs, ct).ConfigureAwait(false);
+                    return await AwaitTransitionAsync(command, transition, waitMs, false, ct).ConfigureAwait(false);
                 });
 
             registry.Add(
                 "debug_stop",
-                "Arrete la session de debogage et revient en mode conception.",
+                "Arrete la session de debogage et revient en mode conception. Si Visual Studio demande " +
+                "confirmation, la boite est confirmee (confirm=true) ou decrite dans la reponse.",
                 SchemaBuilder.New()
                     .Instance()
                     .Bool("force",
                         "Terminer directement les processus debogues plutot que d'emettre la commande " +
-                        "Arreter de Visual Studio, qui ouvre selon le projet une confirmation modale " +
-                        "bloquant toute automation. Mettre a false si la session est attachee a un " +
-                        "processus qu'il ne faut pas tuer.",
+                        "Arreter de Visual Studio, qui ouvre selon le projet une confirmation modale. " +
+                        "Mettre a false si la session est attachee a un processus qu'il ne faut pas tuer.",
+                        defaultValue: true)
+                    .Bool("confirm",
+                        "Repondre Oui (ou OK) a la confirmation que Visual Studio ouvre pendant l'arret. " +
+                        "A false, la boite reste ouverte et sa description est renvoyee : y repondre " +
+                        "avec answer_dialog.",
                         defaultValue: true)
                     .Int("wait_ms", "Attente du retour en mode conception.", defaultValue: 15000)
                     .Build(),
                 async (args, ctx, ct) =>
                 {
                     var force = Args.Bool(args, "force", true);
+                    var confirm = Args.Bool(args, "confirm", true);
                     var waitMs = Clamp(Args.Int(args, "wait_ms", 15000));
+
+                    // Une boite deja ouverte bloque le thread UI. On ne la confirme pas a
+                    // l'aveugle : rien ne dit qu'elle vient d'un arret.
+                    var preexisting = ModalDialogs.FindTop();
+                    if (preexisting != null) return DialogOpenState(preexisting, null);
 
                     // Rien a arreter : le signaler plutot qu'attendre une transition qui ne viendra pas.
                     var current = await UiThread.RunAsync(() => BuildState(), ct);
@@ -236,24 +247,30 @@ namespace ClaudeCodeVsMcp.Tools
                     }
 
                     // Mode normal, ou aucun processus terminable : on emet la commande de Visual
-                    // Studio, quitte a ce qu'elle demande confirmation.
+                    // Studio, quitte a ce qu'elle demande confirmation. Surtout ne pas l'attendre :
+                    // Stop ne rend la main qu'a la fermeture de la boite, qu'AwaitTransitionAsync
+                    // doit justement pouvoir voir et confirmer.
+                    Task command = null;
                     if (terminated.Count == 0)
                     {
-                        await UiThread.RunAsync(() =>
+                        command = UiThread.RunAsync(() =>
                         {
                             DteProvider.Dte.Debugger.Stop(false);
                             return true;
                         }, ct);
                     }
 
-                    var state = await AwaitTransitionAsync(transition, waitMs, ct).ConfigureAwait(false);
+                    var state = await AwaitTransitionAsync(command, transition, waitMs, confirm, ct).ConfigureAwait(false);
 
                     if (terminated.Count > 0) state["terminatedProcesses"] = terminated;
                     if (failed.Count > 0)
                     {
                         state["notTerminated"] = failed;
-                        state["hint"] = "Certains processus debogues n'ont pas pu etre termines, un " +
-                            "processus eleve par exemple. Visual Studio peut demander confirmation.";
+                        if (state["dialog"] == null)
+                        {
+                            state["hint"] = "Certains processus debogues n'ont pas pu etre termines, un " +
+                                "processus eleve par exemple.";
+                        }
                     }
 
                     return state;
@@ -331,27 +348,114 @@ namespace ClaudeCodeVsMcp.Tools
             return Math.Min(Math.Max(0, waitMs), MaxWaitMs);
         }
 
+        private const int DialogPollMs = 150;
+
         /// <summary>
         /// Attend une transition du debogueur. Un depassement de delai n'est pas une erreur :
         /// le programme tourne peut-etre simplement toujours.
+        ///
+        /// La commande qui provoque la transition est passee sans etre attendue : si Visual Studio
+        /// ouvre une boite modale, elle ne rend la main qu'a sa fermeture. On surveille donc en
+        /// parallele les boites ouvertes et on en rend compte, au lieu de rester bloque jusqu'au
+        /// delai d'UiThread. Avec confirmDialogs, chaque boite est confirmee (Oui, sinon OK) et
+        /// l'attente continue.
         /// </summary>
-        private static async Task<JObject> AwaitTransitionAsync(Task<DebugTransition> transition, int waitMs, System.Threading.CancellationToken ct)
+        private static async Task<JObject> AwaitTransitionAsync(Task command, Task<DebugTransition> transition,
+            int waitMs, bool confirmDialogs, System.Threading.CancellationToken ct)
         {
-            var completed = await Task.WhenAny(transition, Task.Delay(waitMs, ct)).ConfigureAwait(false);
+            var confirmed = new JArray();
+            var deadline = Environment.TickCount + waitMs;
 
-            if (completed != transition)
+            try
             {
-                var running = await UiThread.RunAsync(() => BuildState(), ct);
-                running["waitTimedOut"] = true;
-                running["hint"] = "Le programme s'execute toujours. Poser un point d'arret, ou appeler debug_pause.";
-                return running;
+                while (!transition.IsCompleted)
+                {
+                    var dialog = ModalDialogs.FindTop();
+                    if (dialog != null)
+                    {
+                        // Garde-fou contre une boite qui en rouvre une autre indefiniment.
+                        if (!confirmDialogs || confirmed.Count >= 3) return DialogOpenState(dialog, confirmed);
+
+                        var json = dialog.ToJson();
+                        var clicked = ModalDialogs.Confirm(dialog);
+                        if (clicked == null) return DialogOpenState(dialog, confirmed);
+
+                        json["answered"] = clicked.Label;
+                        confirmed.Add(json);
+                        ExtensionLog.Info("Boite \"" + dialog.Title + "\" confirmee par \"" + clicked.Label + "\".");
+                        continue;
+                    }
+
+                    // Commande refusee (pas en mode arret, debogueur absent...) : remonter l'erreur.
+                    // Teste apres les boites : une commande expiree a cause d'une boite doit etre
+                    // rapportee comme telle, pas comme un delai depasse.
+                    // Une commande abandonnee pour cause de boite (ModalDialogException) n'est pas
+                    // une erreur ici : la boite vient d'etre traitee, la transition suit.
+                    if (command != null && command.IsCompleted)
+                    {
+                        if (command.IsFaulted && !(command.Exception?.GetBaseException() is ModalDialogException))
+                        {
+                            await command.ConfigureAwait(false);
+                        }
+                        command = null;
+                    }
+
+                    var remaining = deadline - Environment.TickCount;
+                    if (remaining <= 0) break;
+
+                    await Task.WhenAny(transition, Task.Delay(Math.Min(DialogPollMs, remaining), ct)).ConfigureAwait(false);
+                    ct.ThrowIfCancellationRequested();
+                }
+            }
+            finally
+            {
+                Observe(command);
             }
 
-            var result = await transition.ConfigureAwait(false);
-            var state = await UiThread.RunAsync(() => BuildState(), ct);
-            state["transition"] = result.KindName;
-            state["reason"] = result.Reason;
+            JObject state;
+            if (transition.IsCompleted)
+            {
+                var result = await transition.ConfigureAwait(false);
+                state = await UiThread.RunAsync(() => BuildState(), ct);
+                state["transition"] = result.KindName;
+                state["reason"] = result.Reason;
+            }
+            else
+            {
+                state = await UiThread.RunAsync(() => BuildState(), ct);
+                state["waitTimedOut"] = true;
+                state["hint"] = "Le programme s'execute toujours. Poser un point d'arret, ou appeler debug_pause.";
+            }
+
+            if (confirmed.Count > 0) state["confirmedDialogs"] = confirmed;
             return state;
+        }
+
+        /// <summary>
+        /// Reponse quand une boite modale bloque Visual Studio. Ne touche pas au thread UI :
+        /// tant que la boite est ouverte, il ne repondrait pas.
+        /// </summary>
+        private static JObject DialogOpenState(ModalDialogs.Dialog dialog, JArray confirmed)
+        {
+            var state = new JObject
+            {
+                ["status"] = "dialog_open",
+                ["dialog"] = dialog.ToJson(),
+                ["hint"] = "Visual Studio attend une reponse a cette boite de dialogue et ne traitera " +
+                           "rien d'autre d'ici la. Y repondre avec answer_dialog, puis appeler debug_state."
+            };
+            if (confirmed != null && confirmed.Count > 0) state["confirmedDialogs"] = confirmed;
+            return state;
+        }
+
+        /// <summary>Une commande abandonnee ne doit pas laisser d'exception non observee.</summary>
+        private static void Observe(Task command)
+        {
+            _ = command?.ContinueWith(
+                t => ExtensionLog.Error("Commande du debogueur", t.Exception?.GetBaseException()),
+                System.Threading.CancellationToken.None,
+                TaskContinuationOptions.OnlyOnFaulted | TaskContinuationOptions.ExecuteSynchronously,
+                TaskScheduler.Default);
         }
 
         /// <summary>Etat courant du debogueur, lu sur le thread UI.</summary>

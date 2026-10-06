@@ -196,7 +196,8 @@ namespace ClaudeCodeVsMcp.Server
                 }
             }
 
-            await _localGate.WaitAsync(ct).ConfigureAwait(false);
+            var gated = !tool.IsUngated;
+            if (gated) await _localGate.WaitAsync(ct).ConfigureAwait(false);
             try
             {
                 var payload = await tool.Handler(arguments, ctx, ct).ConfigureAwait(false);
@@ -205,6 +206,10 @@ namespace ClaudeCodeVsMcp.Server
             catch (McpToolException ex)
             {
                 return JsonRpcResponse.Success(request.Id, ToolError(ex.Code, ex.Message));
+            }
+            catch (ModalDialogException ex)
+            {
+                return JsonRpcResponse.Success(request.Id, ToolError("DIALOG_OPEN", ex.Message));
             }
             catch (TimeoutException ex)
             {
@@ -221,7 +226,7 @@ namespace ClaudeCodeVsMcp.Server
             }
             finally
             {
-                _localGate.Release();
+                if (gated) _localGate.Release();
             }
         }
 

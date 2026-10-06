@@ -19,6 +19,12 @@ namespace ClaudeCodeVsMcp.Server
         /// </summary>
         internal bool IsGlobal { get; set; }
 
+        /// <summary>
+        /// Un outil hors verrou s'execute meme quand un autre appel est en cours sur l'instance.
+        /// Reserve aux outils qui ne touchent ni a EnvDTE ni au thread UI (boites de dialogue).
+        /// </summary>
+        internal bool IsUngated { get; set; }
+
         internal Func<JObject, RequestContext, CancellationToken, Task<JObject>> Handler { get; set; }
     }
 
@@ -28,7 +34,8 @@ namespace ClaudeCodeVsMcp.Server
             new Dictionary<string, ToolDefinition>(StringComparer.Ordinal);
 
         internal void Add(string name, string description, JObject inputSchema,
-            Func<JObject, RequestContext, CancellationToken, Task<JObject>> handler, bool isGlobal = false)
+            Func<JObject, RequestContext, CancellationToken, Task<JObject>> handler, bool isGlobal = false,
+            bool ungated = false)
         {
             _tools[name] = new ToolDefinition
             {
@@ -36,7 +43,8 @@ namespace ClaudeCodeVsMcp.Server
                 Description = description,
                 InputSchema = inputSchema,
                 Handler = handler,
-                IsGlobal = isGlobal
+                IsGlobal = isGlobal,
+                IsUngated = ungated
             };
         }
 

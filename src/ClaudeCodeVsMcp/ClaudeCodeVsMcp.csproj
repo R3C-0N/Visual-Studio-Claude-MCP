@@ -86,6 +86,9 @@
     <Reference Include="System.Xaml" />
     <Reference Include="UIAutomationProvider" />
     <Reference Include="UIAutomationTypes" />
+    <!-- Boites de dialogue WPF modales (ModalDialogs) : client UI Automation, utilise hors du
+         thread UI que la boite bloque. -->
+    <Reference Include="UIAutomationClient" />
   </ItemGroup>
 
   <!-- Globbing: evite d'enumerer chaque fichier, contrairement au template VSIX classique. -->

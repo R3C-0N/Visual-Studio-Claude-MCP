@@ -57,12 +57,25 @@ namespace ClaudeCodeVsMcp.Discovery
             };
         }
 
+        /// <summary>
+        /// JObject.Parse convertit deja les chaines ISO en DateTime : les repasser par (string)
+        /// produit un format americain (MM/dd/yyyy) que TryParse relit ensuite dans la culture
+        /// courante. En fr-FR, le 5 octobre devenait le 10 mai, le heartbeat semblait perime
+        /// et chaque instance etait jugee morte du 1er au 12 du mois.
+        /// </summary>
         private static DateTime ParseDate(JToken token)
         {
+            if (token == null) return DateTime.MinValue;
+
+            if (token.Type == JTokenType.Date)
+            {
+                return ((DateTime)token).ToUniversalTime();
+            }
+
             DateTime value;
-            var text = (string)token;
-            return DateTime.TryParse(text, null,
-                System.Globalization.DateTimeStyles.RoundtripKind, out value)
+            return DateTime.TryParse((string)token, System.Globalization.CultureInfo.InvariantCulture,
+                System.Globalization.DateTimeStyles.AdjustToUniversal | System.Globalization.DateTimeStyles.AssumeUniversal,
+                out value)
                 ? value
                 : DateTime.MinValue;
         }

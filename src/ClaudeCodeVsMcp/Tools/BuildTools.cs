@@ -163,23 +163,26 @@ namespace ClaudeCodeVsMcp.Tools
             registry.Add(
                 "get_errors",
                 "Erreurs et avertissements de la fenetre Liste d'erreurs, sous forme structuree " +
-                "(fichier, ligne, colonne, projet) plutot que du texte brut de la fenetre Sortie.",
+                "(code, fichier, ligne, colonne, projet) plutot que du texte brut de la fenetre Sortie. " +
+                "Toutes les entrees sont lues, quels que soient les filtres d'affichage de la fenetre.",
                 SchemaBuilder.New()
                     .Instance()
                     .Str("severity", "Niveau a retourner.", allowed: new[] { "error", "warning", "message", "all" }, defaultValue: "error")
                     .Int("max_items", "Nombre maximum d'elements retournes.", defaultValue: 100)
                     .Str("project", "Ne garder que les entrees dont le projet contient ce texte.")
                     .Str("file", "Ne garder que les entrees dont le fichier contient ce texte.")
+                    .Str("code", "Ne garder que les codes commencant par ce texte, par exemple 'CS0103' ou 'CA'.")
                     .Build(),
-                (args, ctx, ct) => UiThread.RunAsync(() =>
+                (args, ctx, ct) => UiThread.RunAsync(async () =>
                 {
-                    var result = ErrorListReader.Read(
+                    var result = await ErrorListReader.ReadAsync(
                         Args.Str(args, "severity", "error"),
                         Math.Max(1, Args.Int(args, "max_items", 100)),
                         Args.Str(args, "project"),
-                        Args.Str(args, "file"));
+                        Args.Str(args, "file"),
+                        Args.Str(args, "code"));
 
-                    return new JObject
+                    var response = new JObject
                     {
                         ["matched"] = result.Total,
                         ["returned"] = result.Items.Count,
@@ -190,19 +193,26 @@ namespace ClaudeCodeVsMcp.Tools
                             ["warnings"] = result.Warnings,
                             ["messages"] = result.Messages
                         },
-                        ["items"] = result.Items,
-                        // Limite assumee : EnvDTE.ErrorItem n'expose pas le code (CS0103, ...).
-                        ["note"] = "Le champ 'code' est toujours null : EnvDTE ne l'expose pas."
+                        ["items"] = result.Items
                     };
+
+                    if (result.Source == "dte")
+                    {
+                        // Repli sur EnvDTE.ErrorItem, qui n'expose pas le code (CS0103, ...).
+                        response["note"] = "Liste d'erreurs lue par EnvDTE : le champ 'code' est null " +
+                                           "et le filtre 'code' n'a pas pu s'appliquer.";
+                    }
+
+                    return response;
                 }, ct));
         }
 
         /// <summary>Complete le verdict du build par les erreurs de la Liste d'erreurs.</summary>
         private static async Task<JObject> SummarizeAsync(BuildOutcome outcome, string action, CancellationToken ct)
         {
-            return await UiThread.RunAsync(() =>
+            return await UiThread.RunAsync(async () =>
             {
-                var errors = ErrorListReader.Read("error", 20, null, null);
+                var errors = await ErrorListReader.ReadAsync("error", 20, null, null);
 
                 return new JObject
                 {

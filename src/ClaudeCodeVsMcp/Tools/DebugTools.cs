@@ -77,7 +77,7 @@ namespace ClaudeCodeVsMcp.Tools
                         {
                             var failed = outcome.FailedProjects;
                             var errors = await UiThread.RunAsync(
-                                () => ErrorListReader.Read("error", 20, null, null), ct);
+                                () => ErrorListReader.ReadAsync("error", 20, null, null), ct);
 
                             return new JObject
                             {
@@ -419,6 +419,10 @@ namespace ClaudeCodeVsMcp.Tools
                 state = await UiThread.RunAsync(() => BuildState(), ct);
                 state["transition"] = result.KindName;
                 state["reason"] = result.Reason;
+                if (result.Reason.IndexOf("Exception", StringComparison.Ordinal) >= 0)
+                {
+                    state["hint"] = "Arret sur une exception : get_exception la decrit.";
+                }
             }
             else
             {

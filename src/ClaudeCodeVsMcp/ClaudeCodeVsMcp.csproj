@@ -138,6 +138,13 @@
     <!-- Newtonsoft.Json est fourni par le shell VS (redirections de liaison dans devenv.exe.config).
          On compile contre, mais on ne l'embarque PAS dans le VSIX : IncludeInVSIX=false.
          Si une FileLoadException apparait au runtime, basculer IncludeInVSIX sur true. -->
+    <!-- Navigation semantique (VisualStudioWorkspace, SymbolFinder). Roslyn est fourni par
+         l'IDE, qui redirige vers sa propre version : on compile contre la 4.0.1, celle de
+         VS 17.0 (borne basse de l'InstallationTarget), et on n'embarque rien. -->
+    <PackageReference Include="Microsoft.VisualStudio.LanguageServices" Version="4.0.1">
+      <ExcludeAssets>runtime</ExcludeAssets>
+      <IncludeInVSIX>false</IncludeInVSIX>
+    </PackageReference>
     <PackageReference Include="Newtonsoft.Json" Version="13.0.3">
       <ExcludeAssets>runtime</ExcludeAssets>
       <IncludeInVSIX>false</IncludeInVSIX>

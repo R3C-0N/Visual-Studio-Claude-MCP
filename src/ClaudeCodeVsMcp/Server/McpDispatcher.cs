@@ -153,6 +153,10 @@ namespace ClaudeCodeVsMcp.Server
                     "Les builds et les commandes de debogage sont asynchrones : un statut 'running' n'est pas une " +
                     "erreur, c'est un etat legitime a re-interroger. " +
                     "evaluate, get_locals et get_stack exigent que le debogueur soit arrete sur un point d'arret. " +
+                    "Avant de modifier un fichier sur disque, get_dirty_documents dit s'il a des modifications non " +
+                    "enregistrees dans l'IDE, qui seraient perdues ou entreraient en conflit. " +
+                    "find_symbol, go_to_definition et find_references naviguent dans le code C#/VB par Roslyn, " +
+                    "plus surement qu'une recherche de texte. " +
                     "Pour une fenetre sans outil dedie (Explorateur de tests...), ui_snapshot donne l'arbre des controles " +
                     "avec des ids, ui_action agit dessus ; execute_command lance une commande nommee de Visual Studio."
             };

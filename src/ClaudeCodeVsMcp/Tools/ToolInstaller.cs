@@ -28,6 +28,9 @@ namespace ClaudeCodeVsMcp.Tools
             BreakpointTools.Register(registry, breakpoints);
             DebugTools.Register(registry, debugWatcher, buildWatcher);
             InspectTools.Register(registry);
+            ExceptionTools.Register(registry, debugWatcher);
+            DocumentTools.Register(registry);
+            NavigationTools.Register(registry);
             OutputTools.Register(registry);
             SelectionTools.Register(registry);
             UiTools.Register(registry);

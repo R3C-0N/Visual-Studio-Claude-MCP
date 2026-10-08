@@ -15,11 +15,15 @@ l'IDE comme un jeu d'outils que Claude Code peut appeler.
 Sans l'extension, Claude Code édite des fichiers et lance `dotnet build` à l'aveugle. Avec, il
 travaille dans votre IDE :
 
-- « Compile et corrige les erreurs » → il compile, lit la liste d'erreurs structurée avec fichier,
-  ligne et colonne, corrige, recompile.
+- « Compile et corrige les erreurs » → il compile, lit la liste d'erreurs structurée avec code
+  (`CS0103`…), fichier, ligne et colonne, corrige, recompile.
 - « Pose un point d'arrêt ligne 42 et dis-moi pourquoi `total` est négatif » → il pose le point,
   lance le débogage, attend l'arrêt, lit les variables locales et la pile d'appels.
 - « Trace la valeur de `i` à chaque passage sans arrêter le programme » → il pose un tracepoint.
+- « D'où vient cette `InvalidOperationException` avalée par un `catch` ? » → il fait arrêter le
+  débogueur à la levée et lit l'exception : type, message, fichier et ligne d'origine.
+- « Qui appelle `Apply` ? » → il demande les références à Roslyn, qui analyse déjà la solution :
+  les homonymes sont exclus et les surcharges distinguées, ce qu'une recherche de texte ne fait pas.
 - « Regarde ce que j'ai sélectionné » → il lit votre sélection dans l'éditeur ou la console.
 
 C'est le contrôle du débogueur qui fait la différence : aucun outil en ligne de commande ne le
@@ -67,10 +71,13 @@ C'est tout. Demandez à Claude de compiler votre solution pour valider.
 | Domaine | Outils |
 |---|---|
 | Solution | `solution_info`, `list_projects`, `open_file`, `set_startup_project`, `set_configuration` |
+| Navigation | `find_symbol`, `go_to_definition`, `find_references` |
+| Documents | `get_dirty_documents`, `save_documents` |
 | Compilation | `build`, `build_status`, `cancel_build`, `get_errors` |
 | Débogueur | `debug_start`, `debug_stop`, `debug_pause`, `debug_continue`, `debug_step`, `debug_state` |
 | Points d'arrêt | `set_breakpoint`, `list_breakpoints`, `update_breakpoint`, `clear_breakpoints` |
 | Inspection | `evaluate`, `get_locals`, `get_stack` |
+| Exceptions | `break_on_exception`, `get_exception` |
 | Sorties | `list_output_panes`, `get_output_pane` |
 | Sélection | `get_selection`, `take_pending_context` |
 | Interface | `ui_windows`, `ui_snapshot`, `ui_action`, `execute_command` |
@@ -161,6 +168,75 @@ Les points d'arrêt sont identifiés par `chemin:ligne`, format attendu par `dep
 
 ---
 
+## Exceptions
+
+`break_on_exception` règle la fenêtre *Paramètres d'exception* :
+
+| `break_when` | Comportement |
+|---|---|
+| `thrown` (défaut) | interrompt dès la levée, même si un `catch` la traite ensuite |
+| `user_unhandled` | interrompt quand elle sort du code utilisateur sans être traitée (*Uniquement mon code*) |
+| `never` | n'interrompt plus |
+
+`exception` accepte un nom complet (`System.InvalidOperationException`), un nom court s'il est sans
+ambiguïté (`NullReferenceException`), ou plusieurs noms séparés par des virgules. Un nom complet
+inconnu — une exception du projet — est ajouté au groupe. Sans `exception`, l'outil liste celles qui
+interrompent à la levée. `group` cible un autre groupe que .NET (`C++`, `Win32`…), `reset_all`
+rétablit les réglages par défaut. Le réglage vaut pour la session en cours comme pour les suivantes.
+
+Quand le débogueur s'arrête sur une exception, `debug_start` et `debug_continue` le signalent, et
+`get_exception` la décrit :
+
+```json
+{
+  "stoppedAt": "thrown",
+  "type": "System.InvalidOperationException",
+  "message": "Sequence contains no elements",
+  "hresult": "0x80131509",
+  "origin": { "method": "MyApp.Orders.Last(...)", "file": "C:\src\MyApp\Orders.cs", "line": 42 },
+  "stackTrace": [ ... ],
+  "innerExceptions": [ ... ]
+}
+```
+
+La pile vient de `StackTrace` de l'exception, avec fichier et ligne quand les symboles sont
+disponibles. Les `AggregateException` détaillent toutes leurs
+exceptions internes (`aggregated`). Pour une exception native ou SEH, sans objet à inspecter,
+`get_exception` rend le code et la description annoncés par le débogueur.
+
+---
+
+## Navigation dans le code
+
+`find_symbol`, `go_to_definition` et `find_references` interrogent Roslyn sur la solution que
+Visual Studio a déjà chargée : pas de second chargement, et le résultat est exact là où une recherche
+de texte confond homonymes, surcharges et implémentations d'interface.
+
+Un symbole se désigne de deux façons :
+
+- **par une occurrence** : `file`, `line` et `symbol`, l'identifiant tel qu'il est écrit sur cette
+  ligne. C'est la plus sûre, puisque Claude vient en général de lire le fichier ;
+- **par son nom** : `name`, simple ou qualifié (`ExceptionBreaks.Apply`). S'il est ambigu, l'erreur
+  liste les candidats.
+
+```json
+{ "file": "src/MyApp/Orders.cs", "line": 42, "symbol": "Last" }
+```
+
+Chaque résultat donne fichier, ligne, colonne, texte de la ligne et projet. `find_symbol` accepte un
+motif (`ExBr` trouve `ExceptionBreaks`), `go_to_definition` rend toutes les parties d'un type
+`partial` et peut ouvrir l'éditeur (`open`). Un symbole du framework ou d'un paquet NuGet renvoie
+son assembly.
+
+### Modifications non enregistrées
+
+Un fichier modifié dans Visual Studio sans être enregistré diffère de ce que Claude lit sur le
+disque. `get_dirty_documents` (éventuellement sur un seul `path`) les liste avant une modification,
+`save_documents` les enregistre. Les résultats de navigation portent `unsaved: true` quand leurs
+lignes viennent d'un tel tampon.
+
+---
+
 ## Envoyer une sélection depuis Visual Studio
 
 Dans l'éditeur (`Ctrl+Alt+Maj+C` ou clic droit) et dans le menu contextuel de la fenêtre Sortie :
@@ -241,10 +317,12 @@ code auquel vous ne faites pas confiance.
 
 ## Limites connues
 
-- **`get_errors` ne renvoie pas le code d'erreur** (`CS0103`…) : l'API d'automatisation ne l'expose
-  pas.
-- **`get_stack` ne donne ni fichier ni ligne**, seulement fonction, module et langage. Pour la
-  position courante, utiliser `debug_state`.
+- **La navigation ne couvre que C# et VB** : Roslyn n'analyse pas le C++. Sur un fichier modifié
+  non enregistré, les positions suivent le tampon de l'éditeur, pas le disque.
+- **`get_stack` ne donne fichier et ligne que si les symboles sont chargés** : sans PDB, une frame
+  n'a que sa fonction et son module.
+- **`get_exception` évalue `Message`, `StackTrace`…** sur l'exception, donc du code du programme
+  débogué : une exception personnalisée qui surcharge `Message` l'exécute.
 - **`evaluate`, `get_locals` et `get_stack` exigent un arrêt** sur point d'arrêt : l'évaluateur
   d'expressions n'existe pas pendant l'exécution. Évaluer peut avoir des effets de bord, une
   propriété appelée exécutant son code.

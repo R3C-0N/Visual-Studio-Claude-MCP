@@ -33,6 +33,21 @@ namespace ClaudeCodeVsMcp.Vs
     }
 
     /// <summary>
+    /// Exception signalee par le debogueur juste avant l'arret qu'elle provoque. Seule source
+    /// d'information quand $exception n'est pas evaluable (code natif, exception SEH).
+    /// </summary>
+    internal sealed class DebuggerException
+    {
+        internal string Type { get; set; }
+        internal string Name { get; set; }
+        internal int Code { get; set; }
+        internal string Description { get; set; }
+
+        /// <summary>true : non geree par le code utilisateur ; false : arret a la levee.</summary>
+        internal bool Unhandled { get; set; }
+    }
+
+    /// <summary>
     /// Traduit les transitions du debogueur en taches attendables.
     ///
     /// Comme pour BuildWatcher, DebuggerEvents doit etre conserve dans un champ d'instance
@@ -55,6 +70,12 @@ namespace ClaudeCodeVsMcp.Vs
         /// <summary>Declenche sur le thread UI quand la session de debogage se termine.</summary>
         internal event Action SessionEnded;
 
+        /// <summary>
+        /// Derniere exception ayant arrete le debogueur, ou null. Effacee a la reprise : elle ne
+        /// decrit que l'arret en cours. Lue et ecrite sur le thread UI uniquement.
+        /// </summary>
+        internal DebuggerException LastException { get; private set; }
+
         internal void Subscribe(DTE2 dte)
         {
             ThreadHelper.ThrowIfNotOnUIThread();
@@ -63,6 +84,8 @@ namespace ClaudeCodeVsMcp.Vs
             _debuggerEvents.OnEnterBreakMode += OnEnterBreakMode;
             _debuggerEvents.OnEnterRunMode += OnEnterRunMode;
             _debuggerEvents.OnEnterDesignMode += OnEnterDesignMode;
+            _debuggerEvents.OnExceptionThrown += OnExceptionThrown;
+            _debuggerEvents.OnExceptionNotHandled += OnExceptionNotHandled;
         }
 
         /// <summary>
@@ -89,6 +112,7 @@ namespace ClaudeCodeVsMcp.Vs
 
         private void OnEnterRunMode(dbgEventReason reason)
         {
+            LastException = null;
             // On ne complete pas sur le passage en Run : l'appelant attend un arret ou la fin.
         }
 
@@ -98,8 +122,37 @@ namespace ClaudeCodeVsMcp.Vs
         /// </summary>
         private void OnEnterDesignMode(dbgEventReason reason)
         {
+            LastException = null;
             Complete(DebugTransitionKind.Design, reason.ToString());
             Raise(SessionEnded, "SessionEnded");
+        }
+
+        /// <summary>
+        /// Meme regle que pour OnEnterBreakMode : ne JAMAIS ecrire dans 'ref dbgExceptionAction',
+        /// cela deciderait a la place de l'utilisateur de reprendre ou d'ignorer l'exception.
+        /// </summary>
+        private void OnExceptionThrown(string exceptionType, string name, int code, string description,
+            ref dbgExceptionAction exceptionAction)
+        {
+            Record(exceptionType, name, code, description, false);
+        }
+
+        private void OnExceptionNotHandled(string exceptionType, string name, int code, string description,
+            ref dbgExceptionAction exceptionAction)
+        {
+            Record(exceptionType, name, code, description, true);
+        }
+
+        private void Record(string exceptionType, string name, int code, string description, bool unhandled)
+        {
+            LastException = new DebuggerException
+            {
+                Type = exceptionType,
+                Name = name,
+                Code = code,
+                Description = description,
+                Unhandled = unhandled
+            };
         }
 
         /// <summary>
@@ -135,6 +188,8 @@ namespace ClaudeCodeVsMcp.Vs
                     _debuggerEvents.OnEnterBreakMode -= OnEnterBreakMode;
                     _debuggerEvents.OnEnterRunMode -= OnEnterRunMode;
                     _debuggerEvents.OnEnterDesignMode -= OnEnterDesignMode;
+                    _debuggerEvents.OnExceptionThrown -= OnExceptionThrown;
+                    _debuggerEvents.OnExceptionNotHandled -= OnExceptionNotHandled;
                     _debuggerEvents = null;
                 }
             }

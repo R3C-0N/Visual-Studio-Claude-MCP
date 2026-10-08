@@ -111,15 +111,18 @@ namespace ClaudeCodeVsMcp.Tools
 
             registry.Add(
                 "get_stack",
-                "Pile d'appels du thread courant. Exige que le debogueur soit arrete. " +
-                "Ne contient ni fichier ni numero de ligne : EnvDTE ne les expose pas sur une frame.",
+                "Pile d'appels du thread courant, avec fichier et ligne quand les symboles sont charges. " +
+                "Exige que le debogueur soit arrete. L'index d'une frame est celui attendu par " +
+                "get_locals frame_index.",
                 SchemaBuilder.New()
                     .Instance()
                     .Int("max_frames", "Nombre maximum de frames retournees.", defaultValue: 30)
+                    .Bool("user_code_only", "Ne garder que les frames du code utilisateur (Uniquement mon code).", defaultValue: false)
                     .Build(),
                 (args, ctx, ct) => UiThread.RunAsync(() =>
                 {
                     var maxFrames = Clamp(Args.Int(args, "max_frames", 30), 1, 200);
+                    var userCodeOnly = Args.Bool(args, "user_code_only", false);
                     var debugger = DteProvider.RequireBreakMode();
 
                     var frames = new JArray();
@@ -129,10 +132,26 @@ namespace ClaudeCodeVsMcp.Tools
                     {
                         if (frames.Count >= maxFrames) break;
 
+                        // L'index reste celui de la pile reelle, meme quand on filtre : c'est lui que
+                        // get_locals attend.
+                        var frameIndex = index++;
+
+                        // StackFrame2 (EnvDTE90a) porte fichier, ligne et UserCode ; une frame
+                        // sans symboles renvoie un fichier vide et la ligne 0.
+                        var frame2 = frame as EnvDTE90a.StackFrame2;
+                        var userCode = frame2 != null && SafeBool(() => frame2.UserCode);
+                        if (userCodeOnly && !userCode) continue;
+
+                        var file = frame2 == null ? string.Empty : Safe(() => frame2.FileName);
+                        var line = frame2 == null ? 0 : SafeInt(() => (int)frame2.LineNumber);
+
                         frames.Add(new JObject
                         {
-                            ["index"] = index++,
+                            ["index"] = frameIndex,
                             ["function"] = Safe(() => frame.FunctionName),
+                            ["file"] = file.Length > 0 ? (JToken)file : null,
+                            ["line"] = line > 0 ? (JToken)line : null,
+                            ["userCode"] = userCode,
                             ["module"] = Safe(() => frame.Module),
                             ["language"] = Safe(() => frame.Language),
                             ["returnType"] = Safe(() => frame.ReturnType)
@@ -147,8 +166,7 @@ namespace ClaudeCodeVsMcp.Tools
                             ["name"] = Safe(() => debugger.CurrentThread.Name)
                         },
                         ["frameCount"] = frames.Count,
-                        ["frames"] = frames,
-                        ["note"] = "Pour la position source courante, utiliser debug_state."
+                        ["frames"] = frames
                     };
                 }, ct));
         }

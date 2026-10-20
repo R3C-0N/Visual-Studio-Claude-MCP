@@ -52,6 +52,47 @@ namespace ClaudeCodeVsMcp.Vs
             return paths;
         }
 
+        /// <summary>
+        /// Ouvre le fichier, active sa fenetre et place le curseur. RunToCursor et
+        /// SetNextStatement agissent sur ce curseur : c'est leur seul moyen de recevoir une ligne.
+        /// </summary>
+        internal static void OpenAt(string path, int line, int column)
+        {
+            ThreadHelper.ThrowIfNotOnUIThread();
+
+            if (!File.Exists(path))
+            {
+                throw ClaudeCodeVsMcp.Server.McpToolException.NotFound("Fichier introuvable : " + path);
+            }
+
+            // Activer la fenetre amene Visual Studio au premier plan : ce que l'utilisateur tapait
+            // ailleurs a ce moment atterrirait dans l'editeur. On rend donc le premier plan a la
+            // fenetre qui l'avait, si elle n'appartient pas a Visual Studio.
+            var previous = ForegroundWindow.Capture();
+
+            try
+            {
+                var window = DteProvider.Dte.ItemOperations.OpenFile(path, Constants.vsViewKindTextView);
+                window?.Activate();
+
+                var selection = window?.Document?.Selection as TextSelection;
+                if (selection == null)
+                {
+                    throw new ClaudeCodeVsMcp.Server.McpToolException("UNSUPPORTED",
+                        "Le fichier ne s'ouvre pas dans un editeur de texte : " + path);
+                }
+
+                selection.MoveToLineAndOffset(Math.Max(1, line), Math.Max(1, column));
+
+                // Colonne 1 = indentation : RunToCursor et SetNextStatement n'y voient "aucun code".
+                if (column <= 1) selection.StartOfLine(vsStartOfLineOptions.vsStartOfLineOptionsFirstText);
+            }
+            finally
+            {
+                ForegroundWindow.Restore(previous);
+            }
+        }
+
         internal static JObject Describe(Document document)
         {
             ThreadHelper.ThrowIfNotOnUIThread();

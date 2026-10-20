@@ -39,6 +39,12 @@ namespace ClaudeCodeVsMcp.Vs
         internal static Solution CurrentSolution()
         {
             ThreadHelper.ThrowIfNotOnUIThread();
+            return Workspace().CurrentSolution;
+        }
+
+        internal static VisualStudioWorkspace Workspace()
+        {
+            ThreadHelper.ThrowIfNotOnUIThread();
 
             DteProvider.RequireSolution();
 
@@ -58,7 +64,7 @@ namespace ClaudeCodeVsMcp.Vs
                 throw new McpToolException("UNSUPPORTED",
                     "L'espace de travail Roslyn n'est pas disponible dans cette instance de Visual Studio.");
             }
-            return workspace.CurrentSolution;
+            return workspace;
         }
 
         /// <summary>
@@ -292,7 +298,7 @@ namespace ClaudeCodeVsMcp.Vs
             return char.IsLetterOrDigit(c) || c == '_';
         }
 
-        private static string Truncate(string value)
+        internal static string Truncate(string value)
         {
             return value.Length <= MaxTextLength ? value : value.Substring(0, MaxTextLength) + "...";
         }

@@ -129,6 +129,14 @@ namespace ClaudeCodeVsMcp.Tools
                     {
                         result["stoppedAt"] = signaled.Unhandled ? "unhandled" : "thrown";
                     }
+                    else
+                    {
+                        // Les evenements d'exception d'EnvDTE ne sont pas toujours emis (Visual Studio
+                        // 2026) : a defaut, la raison du dernier arret.
+                        var reason = SafeReason(debugger);
+                        if (reason == dbgEventReason.dbgEventReasonExceptionNotHandled) result["stoppedAt"] = "unhandled";
+                        else if (reason == dbgEventReason.dbgEventReasonExceptionThrown) result["stoppedAt"] = "thrown";
+                    }
 
                     if (!managed)
                     {
@@ -347,6 +355,14 @@ namespace ClaudeCodeVsMcp.Tools
         private static bool IsNull(string value)
         {
             return value == null || value.Trim() == "null";
+        }
+
+        private static dbgEventReason SafeReason(Debugger debugger)
+        {
+            Microsoft.VisualStudio.Shell.ThreadHelper.ThrowIfNotOnUIThread();
+
+            try { return debugger.LastBreakReason; }
+            catch (Exception) { return dbgEventReason.dbgEventReasonNone; }
         }
 
         /// <summary>

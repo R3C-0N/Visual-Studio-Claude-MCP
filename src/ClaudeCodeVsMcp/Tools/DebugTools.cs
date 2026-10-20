@@ -192,6 +192,143 @@ namespace ClaudeCodeVsMcp.Tools
                 });
 
             registry.Add(
+                "run_to_line",
+                "Execute jusqu'a une ligne (equivalent Ctrl+F10), sans poser de point d'arret. En mode " +
+                "conception, demarre le debogage. Un point d'arret rencontre avant arrete plus tot : la " +
+                "reponse donne la position reelle.",
+                SchemaBuilder.New()
+                    .Instance()
+                    .Str("file", "Fichier. Absolu, ou relatif au repertoire de la solution.", required: true)
+                    .Int("line", "Ligne cible (1-based).", required: true)
+                    .Int("wait_ms", "Attente maximale de l'arret.", defaultValue: 30000)
+                    .Build(),
+                async (args, ctx, ct) =>
+                {
+                    var waitMs = Clamp(Args.Int(args, "wait_ms", 30000));
+                    var transition = watcher.Arm();
+
+                    var command = UiThread.RunAsync(() =>
+                    {
+                        var debugger = DteProvider.Dte.Debugger;
+                        if (debugger.CurrentMode == dbgDebugMode.dbgRunMode)
+                        {
+                            throw new McpToolException("INVALID_STATE",
+                                "Le programme s'execute : appeler debug_pause avant run_to_line.");
+                        }
+
+                        DocumentHelper.OpenAt(SolutionTools.ResolvePath(Args.RequireStr(args, "file")),
+                            Args.RequireInt(args, "line"), 1);
+                        debugger.RunToCursor(false);
+                        return true;
+                    }, ct);
+
+                    return await AwaitTransitionAsync(command, transition, waitMs, false, ct).ConfigureAwait(false);
+                });
+
+            registry.Add(
+                "set_next_statement",
+                "Deplace l'instruction suivante sur une ligne de la fonction courante, sans rien executer. " +
+                "Exige que le debogueur soit arrete. Les lignes sautees ne s'executent pas, celles rejouees " +
+                "s'executent une seconde fois : utile pour retenter un bloc apres avoir change une variable.",
+                SchemaBuilder.New()
+                    .Instance()
+                    .Str("file", "Fichier de la fonction courante. Absolu, ou relatif a la solution.", required: true)
+                    .Int("line", "Ligne de la prochaine instruction (1-based).", required: true)
+                    .Build(),
+                (args, ctx, ct) => UiThread.RunAsync(() =>
+                {
+                    var debugger = DteProvider.RequireBreakMode();
+
+                    DocumentHelper.OpenAt(SolutionTools.ResolvePath(Args.RequireStr(args, "file")),
+                        Args.RequireInt(args, "line"), 1);
+
+                    try
+                    {
+                        debugger.SetNextStatement();
+                    }
+                    catch (System.Runtime.InteropServices.COMException ex)
+                    {
+                        throw new McpToolException("INVALID_TARGET",
+                            "Le debogueur refuse cette ligne (hors de la fonction courante, ou sans code) : " +
+                            ex.Message);
+                    }
+
+                    return BuildState();
+                }, ct));
+
+            registry.Add(
+                "debug_attach",
+                "Attache le debogueur a un processus deja lance (service Windows, w3wp, application " +
+                "demarree hors de Visual Studio), designe par PID ou par nom. debug_detach s'en detache " +
+                "sans le terminer.",
+                SchemaBuilder.New()
+                    .Instance()
+                    .Int("pid", "Identifiant du processus.")
+                    .Str("name", "A defaut de PID : nom du processus ou partie de son nom, par exemple 'w3wp'.")
+                    .Str("engine", "Moteur de debogage (partie de son nom : 'Managed', 'Native'...). Par defaut, detection automatique.")
+                    .Build(),
+                (args, ctx, ct) => UiThread.RunAsync(() =>
+                {
+                    var target = FindLocalProcess(Args.Int(args, "pid", 0), Args.Str(args, "name"));
+                    var engine = Args.Str(args, "engine");
+
+                    try
+                    {
+                        if (string.IsNullOrWhiteSpace(engine))
+                        {
+                            target.Attach();
+                        }
+                        else
+                        {
+                            ((EnvDTE80.Process2)target).Attach2(FindEngine(engine));
+                        }
+                    }
+                    catch (System.Runtime.InteropServices.COMException ex)
+                    {
+                        throw new McpToolException("ATTACH_FAILED",
+                            "Attachement refuse : " + ex.Message + " Un processus eleve (service, IIS) exige " +
+                            "un Visual Studio lance en administrateur.");
+                    }
+
+                    var state = BuildState();
+                    state["attached"] = DescribeLocal(target);
+                    return state;
+                }, ct, TimeSpan.FromSeconds(60)));
+
+            registry.Add(
+                "debug_detach",
+                "Detache le debogueur de tous les processus debogues, qui continuent de s'executer.",
+                SchemaBuilder.New()
+                    .Instance()
+                    .Int("wait_ms", "Attente du retour en mode conception.", defaultValue: 10000)
+                    .Build(),
+                async (args, ctx, ct) =>
+                {
+                    var waitMs = Clamp(Args.Int(args, "wait_ms", 10000));
+                    var detached = new JArray();
+                    var transition = watcher.Arm();
+
+                    // DetachAll rend la main avant que le debogueur ait quitte la session : on attend
+                    // le passage en mode conception plutot que de rendre un etat intermediaire.
+                    var command = UiThread.RunAsync(() =>
+                    {
+                        var debugger = DteProvider.Dte.Debugger;
+                        if (debugger.CurrentMode == dbgDebugMode.dbgDesignMode)
+                        {
+                            throw new McpToolException("INVALID_STATE", "Aucune session de debogage en cours.");
+                        }
+
+                        foreach (var process in DebuggedProcesses()) detached.Add(Describe(process));
+                        debugger.DetachAll();
+                        return true;
+                    }, ct);
+
+                    var state = await AwaitTransitionAsync(command, transition, waitMs, false, ct).ConfigureAwait(false);
+                    state["detached"] = detached;
+                    return state;
+                });
+
+            registry.Add(
                 "debug_stop",
                 "Arrete la session de debogage et revient en mode conception. Si Visual Studio demande " +
                 "confirmation, la boite est confirmee (confirm=true) ou decrite dans la reponse.",
@@ -310,6 +447,115 @@ namespace ClaudeCodeVsMcp.Tools
         }
 
         /// <summary>
+        /// Processus local designe par PID, ou par nom (partie du nom de fichier, insensible a la
+        /// casse). Un nom exact (sans extension) l'emporte sur les correspondances partielles.
+        /// </summary>
+        private static EnvDTE.Process FindLocalProcess(int pid, string name)
+        {
+            Microsoft.VisualStudio.Shell.ThreadHelper.ThrowIfNotOnUIThread();
+
+            if (pid <= 0 && string.IsNullOrWhiteSpace(name))
+            {
+                throw McpToolException.InvalidArgs("Donner 'pid' ou 'name'.");
+            }
+
+            var matches = new List<EnvDTE.Process>();
+            var exact = new List<EnvDTE.Process>();
+
+            foreach (EnvDTE.Process process in DteProvider.Dte.Debugger.LocalProcesses)
+            {
+                int id;
+                string fileName;
+                try
+                {
+                    id = process.ProcessID;
+                    fileName = System.IO.Path.GetFileName(process.Name ?? string.Empty);
+                }
+                catch (Exception)
+                {
+                    continue; // Processus termine entre l'enumeration et la lecture.
+                }
+
+                if (pid > 0)
+                {
+                    if (id == pid) return process;
+                    continue;
+                }
+
+                if (fileName.IndexOf(name.Trim(), StringComparison.OrdinalIgnoreCase) < 0) continue;
+
+                matches.Add(process);
+                if (string.Equals(System.IO.Path.GetFileNameWithoutExtension(fileName), name.Trim(), StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(fileName, name.Trim(), StringComparison.OrdinalIgnoreCase))
+                {
+                    exact.Add(process);
+                }
+            }
+
+            if (pid > 0) throw McpToolException.NotFound("Aucun processus local de PID " + pid + ".");
+            if (exact.Count == 1) return exact[0];
+            if (matches.Count == 1) return matches[0];
+            if (matches.Count == 0) throw McpToolException.NotFound("Aucun processus local ne correspond a '" + name + "'.");
+
+            var candidates = new List<string>();
+            foreach (var process in matches)
+            {
+                if (candidates.Count >= 15) break;
+                var described = DescribeLocal(process);
+                candidates.Add(described["name"] + " (pid " + described["pid"] + ")");
+            }
+            throw McpToolException.InvalidArgs(
+                matches.Count + " processus correspondent a '" + name + "' : " + string.Join(", ", candidates) +
+                ". Donner le 'pid'.");
+        }
+
+        private static JObject DescribeLocal(EnvDTE.Process process)
+        {
+            Microsoft.VisualStudio.Shell.ThreadHelper.ThrowIfNotOnUIThread();
+
+            var process2 = process as EnvDTE80.Process2;
+            return new JObject
+            {
+                ["pid"] = SafeInt(() => process.ProcessID),
+                ["name"] = System.IO.Path.GetFileName(SafeString(() => process.Name)),
+                ["path"] = SafeString(() => process.Name),
+                ["user"] = process2 == null ? string.Empty : SafeString(() => process2.UserName)
+            };
+        }
+
+        /// <summary>
+        /// Moteur de debogage du transport par defaut dont le nom contient le texte donne. Les noms
+        /// sont localises : on liste ceux disponibles en cas d'echec.
+        /// </summary>
+        private static EnvDTE80.Engine FindEngine(string text)
+        {
+            Microsoft.VisualStudio.Shell.ThreadHelper.ThrowIfNotOnUIThread();
+
+            var debugger = DteProvider.Dte.Debugger as EnvDTE80.Debugger2;
+            var transport = debugger?.Transports?.Item("Default");
+            if (transport == null)
+            {
+                throw new McpToolException("UNSUPPORTED", "Transport de debogage par defaut introuvable.");
+            }
+
+            var matches = new List<EnvDTE80.Engine>();
+            var names = new List<string>();
+
+            foreach (EnvDTE80.Engine engine in transport.Engines)
+            {
+                var engineName = SafeString(() => engine.Name);
+                names.Add(engineName);
+                if (engineName.IndexOf(text.Trim(), StringComparison.OrdinalIgnoreCase) >= 0) matches.Add(engine);
+            }
+
+            if (matches.Count == 1) return matches[0];
+
+            throw McpToolException.InvalidArgs(
+                (matches.Count == 0 ? "Aucun moteur ne correspond a '" : "Plusieurs moteurs correspondent a '") +
+                text + "'. Moteurs disponibles : " + string.Join(" ; ", names) + ".");
+        }
+
+        /// <summary>
         /// Terminaison brutale, equivalente a ce que fait la commande Arreter : aucun code de
         /// sortie propre n'est execute dans le programme debogue.
         /// </summary>
@@ -366,6 +612,10 @@ namespace ClaudeCodeVsMcp.Tools
             var confirmed = new JArray();
             var deadline = Environment.TickCount + waitMs;
 
+            // La commande vient d'etre emise et n'a pas encore abouti : la fenetre active est encore
+            // celle de l'utilisateur. Visual Studio se met au premier plan a l'arret ; on la lui rend.
+            var foreground = ForegroundWindow.Capture();
+
             try
             {
                 while (!transition.IsCompleted)
@@ -416,13 +666,20 @@ namespace ClaudeCodeVsMcp.Tools
             if (transition.IsCompleted)
             {
                 var result = await transition.ConfigureAwait(false);
-                state = await UiThread.RunAsync(() => BuildState(), ct);
+                state = await UiThread.RunAsync(() =>
+                {
+                    var built = BuildState();
+
+                    // La raison transmise par Visual Studio n'est pas fiable (une pause peut arriver
+                    // marquee ExceptionThrown) : on ne l'annonce que si $exception existe vraiment.
+                    if (result.Reason.IndexOf("Exception", StringComparison.Ordinal) >= 0 && HasCurrentException())
+                    {
+                        built["hint"] = "Arret sur une exception : get_exception la decrit.";
+                    }
+                    return built;
+                }, ct);
                 state["transition"] = result.KindName;
                 state["reason"] = result.Reason;
-                if (result.Reason.IndexOf("Exception", StringComparison.Ordinal) >= 0)
-                {
-                    state["hint"] = "Arret sur une exception : get_exception la decrit.";
-                }
             }
             else
             {
@@ -432,6 +689,7 @@ namespace ClaudeCodeVsMcp.Tools
             }
 
             if (confirmed.Count > 0) state["confirmedDialogs"] = confirmed;
+            ForegroundWindow.Restore(foreground);
             return state;
         }
 
@@ -496,10 +754,10 @@ namespace ClaudeCodeVsMcp.Tools
                 };
             }
 
-            // EnvDTE.StackFrame n'expose ni fichier ni ligne. A l'arret, Visual Studio place le
-            // curseur sur l'instruction courante : on lit donc le document actif. C'est une
-            // approximation fiable en pratique, mais qui suit la navigation de l'utilisateur.
-            state["location"] = CurrentLocation();
+            // StackFrame2 donne la position exacte quand les symboles sont charges. A defaut, on lit
+            // le curseur du document actif, que Visual Studio place sur l'instruction courante a
+            // l'arret : approximation qui suit la navigation de l'utilisateur.
+            state["location"] = (JToken)StackHelper.CurrentPosition(debugger) ?? CurrentLocation();
             return state;
         }
 
@@ -523,6 +781,25 @@ namespace ClaudeCodeVsMcp.Tools
             catch (Exception)
             {
                 return JValue.CreateNull();
+            }
+        }
+
+        /// <summary>Vrai si le debogueur arrete expose une exception courante ($exception).</summary>
+        private static bool HasCurrentException()
+        {
+            Microsoft.VisualStudio.Shell.ThreadHelper.ThrowIfNotOnUIThread();
+
+            try
+            {
+                var debugger = DteProvider.Dte.Debugger;
+                if (debugger.CurrentMode != dbgDebugMode.dbgBreakMode) return false;
+
+                var exception = debugger.GetExpression("$exception", false, 1000);
+                return exception != null && exception.IsValidValue && exception.Value != "null";
+            }
+            catch (Exception)
+            {
+                return false;
             }
         }
 

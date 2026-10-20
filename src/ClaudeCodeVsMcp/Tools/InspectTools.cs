@@ -124,39 +124,7 @@ namespace ClaudeCodeVsMcp.Tools
                     var maxFrames = Clamp(Args.Int(args, "max_frames", 30), 1, 200);
                     var userCodeOnly = Args.Bool(args, "user_code_only", false);
                     var debugger = DteProvider.RequireBreakMode();
-
-                    var frames = new JArray();
-                    var index = 0;
-
-                    foreach (StackFrame frame in debugger.CurrentThread.StackFrames)
-                    {
-                        if (frames.Count >= maxFrames) break;
-
-                        // L'index reste celui de la pile reelle, meme quand on filtre : c'est lui que
-                        // get_locals attend.
-                        var frameIndex = index++;
-
-                        // StackFrame2 (EnvDTE90a) porte fichier, ligne et UserCode ; une frame
-                        // sans symboles renvoie un fichier vide et la ligne 0.
-                        var frame2 = frame as EnvDTE90a.StackFrame2;
-                        var userCode = frame2 != null && SafeBool(() => frame2.UserCode);
-                        if (userCodeOnly && !userCode) continue;
-
-                        var file = frame2 == null ? string.Empty : Safe(() => frame2.FileName);
-                        var line = frame2 == null ? 0 : SafeInt(() => (int)frame2.LineNumber);
-
-                        frames.Add(new JObject
-                        {
-                            ["index"] = frameIndex,
-                            ["function"] = Safe(() => frame.FunctionName),
-                            ["file"] = file.Length > 0 ? (JToken)file : null,
-                            ["line"] = line > 0 ? (JToken)line : null,
-                            ["userCode"] = userCode,
-                            ["module"] = Safe(() => frame.Module),
-                            ["language"] = Safe(() => frame.Language),
-                            ["returnType"] = Safe(() => frame.ReturnType)
-                        });
-                    }
+                    var frames = StackHelper.DescribeFrames(debugger.CurrentThread.StackFrames, maxFrames, userCodeOnly);
 
                     return new JObject
                     {

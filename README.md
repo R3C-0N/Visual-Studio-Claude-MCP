@@ -24,6 +24,11 @@ travaille dans votre IDE :
   débogueur à la levée et lit l'exception : type, message, fichier et ligne d'origine.
 - « Qui appelle `Apply` ? » → il demande les références à Roslyn, qui analyse déjà la solution :
   les homonymes sont exclus et les surcharges distinguées, ce qu'une recherche de texte ne fait pas.
+- « Renomme `Total` en `Montant` partout » ou « ajoute le using manquant » → il passe par Roslyn
+  (`rename_symbol`, `apply_code_fix`) au lieu d'éditer du texte, et rien n'est appliqué si la
+  modification casse la compilation.
+- « Le programme est figé, regarde » → il le met en pause et lit les piles de tous les threads,
+  regroupées : un interblocage saute aux yeux.
 - « Regarde ce que j'ai sélectionné » → il lit votre sélection dans l'éditeur ou la console.
 
 C'est le contrôle du débogueur qui fait la différence : aucun outil en ligne de commande ne le
@@ -72,9 +77,11 @@ C'est tout. Demandez à Claude de compiler votre solution pour valider.
 |---|---|
 | Solution | `solution_info`, `list_projects`, `open_file`, `set_startup_project`, `set_configuration` |
 | Navigation | `find_symbol`, `go_to_definition`, `find_references` |
+| Refactoring | `rename_symbol`, `apply_code_fix` |
 | Documents | `get_dirty_documents`, `save_documents` |
 | Compilation | `build`, `build_status`, `cancel_build`, `get_errors` |
-| Débogueur | `debug_start`, `debug_stop`, `debug_pause`, `debug_continue`, `debug_step`, `debug_state` |
+| Débogueur | `debug_start`, `debug_stop`, `debug_pause`, `debug_continue`, `debug_step`, `debug_state`, `run_to_line`, `set_next_statement`, `debug_attach`, `debug_detach` |
+| Threads | `list_threads`, `switch_thread`, `get_all_stacks` |
 | Points d'arrêt | `set_breakpoint`, `list_breakpoints`, `update_breakpoint`, `clear_breakpoints` |
 | Inspection | `evaluate`, `get_locals`, `get_stack` |
 | Exceptions | `break_on_exception`, `get_exception` |
@@ -237,6 +244,46 @@ lignes viennent d'un tel tampon.
 
 ---
 
+## Refactorings
+
+`rename_symbol` renomme un symbole dans toute la solution, comme F2 ; il se désigne comme pour la
+navigation (`file` + `line` + `symbol`, ou `name`). `apply_code_fix` reprend l'ampoule : sans `fix`,
+il liste les diagnostics d'une ligne et les correctifs proposés ; avec `fix` (index ou partie du
+titre), il applique celui choisi.
+
+```json
+{ "file": "src/MyApp/Orders.cs", "line": 12, "code": "CS0246", "fix": "using System.Text" }
+```
+
+Les deux outils suivent le même protocole :
+
+- `preview: true` décrit chaque fichier touché, ligne par ligne (avant / après), sans rien écrire ;
+- les erreurs de compilation que la modification **ajouterait** sont listées dans `newErrors`. S'il y
+  en a, rien n'est appliqué, sauf avec `force: true` : c'est ce qui arrête un renommage vers un nom
+  déjà pris ;
+- un fichier partagé par plusieurs cibles d'un projet multi-cible reçoit la même modification
+  partout.
+
+Les correctifs viennent de Visual Studio (ajouter un `using`, implémenter une interface, règles
+`IDE*`…) et des paquets d'analyseurs du projet.
+
+---
+
+## Threads et attachement
+
+Quand le programme est arrêté, `get_all_stacks` donne la pile de chaque thread, en regroupant les
+piles identiques comme la fenêtre *Piles parallèles* : cinquante threads du pool bloqués au même
+endroit tiennent en une entrée, et deux threads qui s'attendent mutuellement ressortent aussitôt.
+`list_threads` résume chaque thread par sa première frame de votre code, `switch_thread` en fait le
+thread courant pour `get_stack`, `get_locals` et `evaluate`.
+
+`run_to_line` exécute jusqu'à une ligne sans point d'arrêt ; `set_next_statement` déplace
+l'instruction suivante dans la fonction courante, par exemple pour rejouer un bloc après avoir
+corrigé une variable. `debug_attach` s'attache à un processus déjà lancé, par PID ou par nom
+(`w3wp`, un service…), et `debug_detach` le laisse continuer sans débogueur.
+
+---
+
 ## Envoyer une sélection depuis Visual Studio
 
 Dans l'éditeur (`Ctrl+Alt+Maj+C` ou clic droit) et dans le menu contextuel de la fenêtre Sortie :
@@ -319,8 +366,18 @@ code auquel vous ne faites pas confiance.
 
 - **La navigation ne couvre que C# et VB** : Roslyn n'analyse pas le C++. Sur un fichier modifié
   non enregistré, les positions suivent le tampon de l'éditeur, pas le disque.
-- **`get_stack` ne donne fichier et ligne que si les symboles sont chargés** : sans PDB, une frame
-  n'a que sa fonction et son module.
+- **Fichier et ligne d'une frame exigent les symboles** (`get_stack`, `debug_state`…) : sans PDB,
+  une frame n'a que sa fonction et son module.
+- **Visual Studio passe au premier plan** à chaque arrêt du débogueur et quand un outil place le
+  curseur (`run_to_line`, `set_next_statement`) : les outils rendent aussitôt la main à la fenêtre
+  que vous utilisiez, mais une frappe tombée dans cet intervalle peut atterrir dans l'éditeur.
+- **Les piles sont celles des threads**, pas les piles logiques `async` : une tâche en attente sans
+  thread n'apparaît pas dans `get_all_stacks`.
+- **`set_next_statement` reste dans la fonction courante**, et ce qui est sauté ou rejoué ne
+  s'annule pas : un effet de bord rejoué s'exécute deux fois.
+- **`apply_code_fix` ne propose que des correctifs de diagnostics** : les refactorings de l'ampoule
+  sans diagnostic (extraire une méthode…) n'y figurent pas. `rename_symbol` ne renomme pas le
+  fichier d'un type renommé.
 - **`get_exception` évalue `Message`, `StackTrace`…** sur l'exception, donc du code du programme
   débogué : une exception personnalisée qui surcharge `Message` l'exécute.
 - **`evaluate`, `get_locals` et `get_stack` exigent un arrêt** sur point d'arrêt : l'évaluateur

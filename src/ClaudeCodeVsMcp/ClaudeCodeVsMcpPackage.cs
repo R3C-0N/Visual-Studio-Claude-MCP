@@ -54,6 +54,16 @@ namespace ClaudeCodeVsMcp
         private readonly SessionStore _sessions = new SessionStore();
         private readonly BreakpointManager _breakpoints = new BreakpointManager();
 
+        // L'Explorateur de tests n'est rattache qu'au premier outil de test : le faire au
+        // chargement forcerait celui du package TestWindow dans toutes les instances.
+        private readonly TestRunWatcher _testWatcher = new TestRunWatcher();
+        private readonly TestWindowBridge _testBridge;
+
+        public ClaudeCodeVsMcpPackage()
+        {
+            _testBridge = new TestWindowBridge(_testWatcher);
+        }
+
         // Les objets d'evenements COM DOIVENT rester references : sans champ, le GC les collecte
         // et les evenements cessent d'arriver silencieusement.
         private SolutionEvents _solutionEvents;
@@ -108,7 +118,7 @@ namespace ClaudeCodeVsMcp
             // --- Retour en arriere-plan : rien de ce qui suit ne doit occuper le thread UI ---
             await TaskScheduler.Default;
 
-            var registry = ToolInstaller.Build(_sessions, _buildWatcher, _debugWatcher, _breakpoints, DescribeServer);
+            var registry = ToolInstaller.Build(_sessions, _buildWatcher, _debugWatcher, _breakpoints, _testBridge, _testWatcher, DescribeServer);
             var dispatcher = new McpDispatcher(registry, _sessions);
 
             _server = new McpHttpServer(dispatcher, ResolveHubPort());

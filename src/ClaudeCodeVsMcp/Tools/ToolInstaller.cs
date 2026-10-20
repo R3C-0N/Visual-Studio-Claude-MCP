@@ -18,6 +18,8 @@ namespace ClaudeCodeVsMcp.Tools
             BuildWatcher buildWatcher,
             DebugWatcher debugWatcher,
             BreakpointManager breakpoints,
+            TestWindowBridge testBridge,
+            TestRunWatcher testWatcher,
             Func<JObject> serverInfo)
         {
             var registry = new ToolRegistry();
@@ -30,6 +32,7 @@ namespace ClaudeCodeVsMcp.Tools
             InspectTools.Register(registry);
             ExceptionTools.Register(registry, debugWatcher);
             ThreadTools.Register(registry);
+            TestTools.Register(registry, testBridge, testWatcher, debugWatcher);
             DocumentTools.Register(registry);
             NavigationTools.Register(registry);
             RefactorTools.Register(registry);

@@ -6,10 +6,8 @@ using System.Threading.Tasks;
 using ClaudeCodeVsMcp.Infrastructure;
 using ClaudeCodeVsMcp.Server;
 using ClaudeCodeVsMcp.Vs;
-using Constants = EnvDTE.Constants;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.FindSymbols;
-using TextSelection = EnvDTE.TextSelection;
 using Newtonsoft.Json.Linq;
 
 namespace ClaudeCodeVsMcp.Tools
@@ -127,7 +125,7 @@ namespace ClaudeCodeVsMcp.Tools
                         var first = definitions.OfType<JObject>().FirstOrDefault(d => d["file"] != null);
                         if (first != null)
                         {
-                            Open((string)first["file"], (int)first["line"], (int)first["column"]);
+                            DocumentHelper.OpenAt((string)first["file"], (int)first["line"], (int)first["column"]);
                             result["opened"] = first["file"];
                         }
                     }
@@ -200,7 +198,7 @@ namespace ClaudeCodeVsMcp.Tools
             "Designer le symbole par sa position (file + line + symbol, le texte de l'identifiant sur cette " +
             "ligne) ou par son nom (name, simple ou qualifie).";
 
-        private static SchemaBuilder Target(SchemaBuilder builder)
+        internal static SchemaBuilder Target(SchemaBuilder builder)
         {
             return builder
                 .Str("file", "Fichier contenant une occurrence du symbole. Absolu, ou relatif a la solution.")
@@ -210,7 +208,7 @@ namespace ClaudeCodeVsMcp.Tools
                 .Str("name", "A defaut de position : nom simple ou qualifie, par exemple 'ExceptionBreaks.Apply'.");
         }
 
-        private static async Task<ISymbol> ResolveAsync(Solution solution, JObject args, CancellationToken ct)
+        internal static async Task<ISymbol> ResolveAsync(Solution solution, JObject args, CancellationToken ct)
         {
             // ResolvePath lit le chemin de la solution dans le DTE.
             await Microsoft.VisualStudio.Shell.ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync(ct);
@@ -244,15 +242,6 @@ namespace ClaudeCodeVsMcp.Tools
         private static string Key(Location location)
         {
             return location.SourceTree.FilePath + ":" + location.SourceSpan.Start;
-        }
-
-        private static void Open(string path, int line, int column)
-        {
-            Microsoft.VisualStudio.Shell.ThreadHelper.ThrowIfNotOnUIThread();
-
-            var window = DteProvider.Dte.ItemOperations.OpenFile(path, Constants.vsViewKindTextView);
-            window?.Activate();
-            (window?.Document?.Selection as TextSelection)?.MoveToLineAndOffset(line, Math.Max(1, column));
         }
 
         private static int Clamp(int value, int min, int max)

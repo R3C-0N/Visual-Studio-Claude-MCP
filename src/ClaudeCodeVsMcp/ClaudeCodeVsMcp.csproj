@@ -75,6 +75,8 @@
     <!-- OleMenuCommandService derive de MenuCommandService, defini dans System.Design.
          Necessaire des qu'on enregistre une commande de menu. -->
     <Reference Include="System.Design" />
+    <!-- ExportProvider (IComponentModel.DefaultExportProvider) : correctifs Roslyn exportes par MEF. -->
+    <Reference Include="System.ComponentModel.Composition" />
     <Reference Include="System.Net.Http" />
     <Reference Include="System.Web.Extensions" />
     <Reference Include="System.Xml" />

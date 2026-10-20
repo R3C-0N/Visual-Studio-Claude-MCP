@@ -157,6 +157,9 @@ namespace ClaudeCodeVsMcp.Server
                     "enregistrees dans l'IDE, qui seraient perdues ou entreraient en conflit. " +
                     "find_symbol, go_to_definition et find_references naviguent dans le code C#/VB par Roslyn, " +
                     "plus surement qu'une recherche de texte. " +
+                    "Pour renommer ou corriger (using manquant, interface a implementer...), preferer rename_symbol " +
+                    "et apply_code_fix a une edition de texte, en commencant par preview:true. " +
+                    "Pour un programme bloque, debug_pause puis get_all_stacks montre ou attend chaque thread. " +
                     "Pour une fenetre sans outil dedie (Explorateur de tests...), ui_snapshot donne l'arbre des controles " +
                     "avec des ids, ui_action agit dessus ; execute_command lance une commande nommee de Visual Studio."
             };

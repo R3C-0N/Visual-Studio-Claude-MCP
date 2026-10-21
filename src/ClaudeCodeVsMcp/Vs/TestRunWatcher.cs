@@ -20,7 +20,7 @@ namespace ClaudeCodeVsMcp.Vs
 
     internal sealed class TestRunEnd
     {
-        /// <summary>completed, cancelled, not_started (rien n'a tourne : build en echec...), refused, failed.</summary>
+        /// <summary>completed, cancelled, not_started (rien n'a tourne : build en echec, lancement refuse...), failed.</summary>
         internal string Status { get; set; }
 
         internal string Detail { get; set; }
@@ -232,15 +232,18 @@ namespace ClaudeCodeVsMcp.Vs
                 run.StartTaskDone = true;
                 if (!run.ExecutionStarted && !accepted)
                 {
+                    // Observe : apres un build en echec, l'Explorateur demande s'il faut executer la
+                    // derniere version compilee ; sur 'Non', le lancement renvoie false. Une annulation
+                    // pendant le build ou la decouverte le fait aussi.
                     end = true;
-                    status = "refused";
+                    status = run.CancelRequested ? "cancelled" : "not_started";
                 }
                 else if (!run.ExecutionStarted)
                 {
                     // Lancement accepte mais aucune execution vue : fin seulement si l'ensemble
                     // d'operations est deja termine (build en echec, aucun test correspondant).
                     end = run.OperationSetFinished;
-                    status = "not_started";
+                    status = run.CancelRequested ? "cancelled" : "not_started";
                 }
                 else
                 {
@@ -251,9 +254,9 @@ namespace ClaudeCodeVsMcp.Vs
 
             if (end)
             {
-                End(run, status, status == "refused"
-                    ? "L'Explorateur de tests a refuse le lancement (une operation est peut-etre deja en cours)."
-                    : null);
+                End(run, status, accepted || status == "cancelled"
+                    ? null
+                    : "L'Explorateur de tests n'a pas lance les tests : build en echec, ou une autre operation en cours.");
             }
         }
 
@@ -363,7 +366,7 @@ namespace ClaudeCodeVsMcp.Vs
                             else if (_active.StartTaskDone)
                             {
                                 toEnd = _active;
-                                endStatus = "not_started";
+                                endStatus = _active.CancelRequested ? "cancelled" : "not_started";
                             }
                         }
                         break;
@@ -384,7 +387,8 @@ namespace ClaudeCodeVsMcp.Vs
 
         private void Remember(int state, string name)
         {
-            _recent.Enqueue(DateTime.UtcNow.ToString("HH:mm:ss.fff") + " 0x" + state.ToString("X") + " " + name);
+            // Heure locale, comme le journal de l'extension.
+            _recent.Enqueue(DateTime.Now.ToString("HH:mm:ss.fff") + " 0x" + state.ToString("X") + " " + name);
             while (_recent.Count > RecentCapacity) _recent.Dequeue();
         }
 

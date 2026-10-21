@@ -101,7 +101,17 @@ namespace ClaudeCodeVsMcp.Vs
         private object _broker;
         private object _statsService;
 
+        /// <summary>
+        /// Observe : a l'ouverture d'une solution, GetTestsAsEnumerableAsync peut rester plusieurs
+        /// minutes sans repondre, le temps que l'Explorateur charge son magasin. On n'attend pas
+        /// au-dela : le verrou du dispatcher bloquerait tous les autres outils.
+        /// </summary>
+        private static readonly TimeSpan GetTestsTimeout = TimeSpan.FromSeconds(15);
+
         private MethodInfo _getTests;
+
+        // Lecture abandonnee mais toujours en cours : reprise par l'appel suivant plutot que relancee.
+        private Task _pendingGetTests;
         private Type _testType;
         private Type _resultType;
 
@@ -203,13 +213,25 @@ namespace ClaudeCodeVsMcp.Vs
             }
         }
 
-        /// <summary>Tous les tests decouverts, avec leurs derniers resultats.</summary>
+        /// <summary>
+        /// Tous les tests decouverts, avec leurs derniers resultats. Leve LOADING si l'Explorateur ne
+        /// repond pas dans GetTestsTimeout (chargement de la solution).
+        /// </summary>
         internal async Task<List<TestInfo>> GetTestsAsync()
         {
-            ThreadHelper.ThrowIfNotOnUIThread();
+            await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
             EnsureInitialized();
 
-            var task = (Task)_getTests.Invoke(_testsService, null);
+            var task = _pendingGetTests ?? (Task)_getTests.Invoke(_testsService, null);
+            _pendingGetTests = null;
+
+            if (await Task.WhenAny(task, Task.Delay(GetTestsTimeout)).ConfigureAwait(true) != task)
+            {
+                _pendingGetTests = task;
+                throw new McpToolException("LOADING",
+                    "L'Explorateur de tests charge encore la solution et ne rend pas la liste des tests. " +
+                    "Rappeler dans quelques secondes (list_tests ou test_status).");
+            }
             await task.ConfigureAwait(true);
 
             var tests = new List<TestInfo>();
@@ -266,7 +288,7 @@ namespace ClaudeCodeVsMcp.Vs
         /// </summary>
         private Task InvokeBroker(string name, Func<ParameterInfo[], object[]> arguments)
         {
-            ThreadHelper.ThrowIfNotOnUIThread();
+            // EnsureInitialized verifie le thread UI.
             EnsureInitialized();
 
             var method = _broker.GetType()
@@ -368,11 +390,15 @@ namespace ClaudeCodeVsMcp.Vs
                    ?? throw Missing(fullName + " sur " + type.FullName);
         }
 
-        /// <summary>Lit une propriete de l'interface ou de l'une de ses interfaces de base ; null si absente.</summary>
+        /// <summary>
+        /// Lit une propriete de l'interface ou de l'une de ses interfaces de base, a defaut de la
+        /// classe (FilePath et LineNumber n'existent que sur la classe concrete) ; null si absente.
+        /// </summary>
         private static object Read(object instance, Type contract, string name)
         {
             var property = contract.GetProperty(name)
-                           ?? contract.GetInterfaces().Select(i => i.GetProperty(name)).FirstOrDefault(p => p != null);
+                           ?? contract.GetInterfaces().Select(i => i.GetProperty(name)).FirstOrDefault(p => p != null)
+                           ?? instance.GetType().GetProperty(name, BindingFlags.Instance | BindingFlags.Public);
             if (property == null) return null;
 
             try { return property.GetValue(instance); }

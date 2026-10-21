@@ -30,6 +30,10 @@ namespace ClaudeCodeVsMcp.Tools
         /// <summary>Attente de la fin apres cancel_tests, avant de considerer l'execution annulee.</summary>
         private const int CancelGraceMs = 5000;
 
+        /// <summary>Memes reglages qu'UiThread : une boite doit persister avant qu'on rende la main.</summary>
+        private const int DialogPollMs = 200;
+        private const int DialogGraceMs = 600;
+
         private const int MaxTextLength = 4000;
         private const int SummaryFailures = 20;
 
@@ -37,9 +41,9 @@ namespace ClaudeCodeVsMcp.Tools
         {
             registry.Add(
                 "list_tests",
-                "Tests decouverts par l'Explorateur de tests, avec leur dernier etat (passed, failed, skipped, notRun), " +
-                "leur fichier et leur ligne. 'discovery' vaut 'discovering' tant que la decouverte n'est pas finie : " +
-                "rappeler alors list_tests.",
+                "Tests decouverts par l'Explorateur de tests, avec leur dernier etat (passed, failed, skipped, notRun) " +
+                "et, quand Visual Studio les connait, leur fichier et leur ligne (sinon find_symbol sur le nom complet). " +
+                "'discovery' vaut 'discovering' ou 'loading' tant que la liste n'est pas prete : rappeler alors list_tests.",
                 SchemaBuilder.New()
                     .Instance()
                     .Str("filter", "Ne garder que les tests dont le nom complet ou affiche contient ce texte.")
@@ -49,7 +53,22 @@ namespace ClaudeCodeVsMcp.Tools
                     .Build(),
                 (args, ctx, ct) => UiThread.RunAsync(async () =>
                 {
-                    var all = await bridge.GetTestsAsync();
+                    List<TestInfo> all;
+                    try
+                    {
+                        all = await bridge.GetTestsAsync();
+                    }
+                    catch (McpToolException ex) when (ex.Code == "LOADING")
+                    {
+                        return new JObject
+                        {
+                            ["discovery"] = "loading",
+                            ["total"] = 0,
+                            ["tests"] = new JArray(),
+                            ["hint"] = ex.Message
+                        };
+                    }
+
                     var state = Args.Str(args, "state");
                     var matched = Filter(all, Args.Str(args, "filter"), Args.Str(args, "project"))
                         .Where(t => state == null || string.Equals(StateName(t.State), state, StringComparison.OrdinalIgnoreCase))
@@ -58,7 +77,7 @@ namespace ClaudeCodeVsMcp.Tools
 
                     var response = new JObject
                     {
-                        ["discovery"] = DiscoveryState(bridge, watcher),
+                        ["discovery"] = DiscoveryState(bridge, watcher, all.Count),
                         ["total"] = all.Count,
                         ["matched"] = matched.Count,
                         ["returned"] = Math.Min(max, matched.Count),
@@ -117,8 +136,14 @@ namespace ClaudeCodeVsMcp.Tools
                     }, ct);
 
                     var tracked = started.Run;
-                    var completed = await Task.WhenAny(tracked.Completion, Task.Delay(waitMs, ct)).ConfigureAwait(false);
-                    if (completed != tracked.Completion)
+                    var dialog = await WaitAsync(tracked.Completion, waitMs, ct).ConfigureAwait(false);
+                    if (dialog != null)
+                    {
+                        var blocked = DescribeDialog(tracked, dialog);
+                        AddUnknown(blocked, started.Unknown);
+                        return blocked;
+                    }
+                    if (!tracked.Completion.IsCompleted)
                     {
                         var running = DescribeRunning(tracked, watcher);
                         AddUnknown(running, started.Unknown);
@@ -144,17 +169,27 @@ namespace ClaudeCodeVsMcp.Tools
                 {
                     var waitMs = Math.Min(Math.Max(0, Args.Int(args, "wait_ms", 0)), MaxWaitMs);
 
+                    // Une boite ouverte bloque le thread UI : on la signale avant de le solliciter.
+                    var run = watcher.Last;
+                    var dialog = run != null && !run.Completion.IsCompleted
+                        ? await WaitAsync(run.Completion, waitMs, ct).ConfigureAwait(false)
+                        : null;
+                    if (dialog == null && (run != null && !run.Completion.IsCompleted || watcher.Phase != "idle"))
+                    {
+                        dialog = ModalDialogs.FindTop();
+                    }
+                    if (dialog != null)
+                    {
+                        var blocked = run != null ? DescribeDialog(run, dialog) : DescribeDialog(dialog);
+                        blocked["phase"] = watcher.Phase;
+                        return blocked;
+                    }
+
                     var counts = await UiThread.RunAsync(() =>
                     {
                         bridge.EnsureInitialized();
                         return bridge.GetCounts();
                     }, ct);
-
-                    var run = watcher.Last;
-                    if (run != null && !run.Completion.IsCompleted && waitMs > 0)
-                    {
-                        await Task.WhenAny(run.Completion, Task.Delay(waitMs, ct)).ConfigureAwait(false);
-                    }
 
                     JObject response;
                     if (run == null)
@@ -172,6 +207,14 @@ namespace ClaudeCodeVsMcp.Tools
                     else
                     {
                         response = await SummarizeAsync(bridge, run, ct).ConfigureAwait(false);
+                        if (watcher.Phase != "idle")
+                        {
+                            // Build ou decouverte en cours : les tests d'une execution lancee depuis
+                            // l'interface ne sont visibles qu'a leur demarrage.
+                            response["note"] = "L'Explorateur de tests est occupe (" + watcher.Phase + ") : une " +
+                                               "execution lancee depuis l'interface apparaitra ici a son demarrage. " +
+                                               "Le bilan ci-dessus est celui de la derniere execution.";
+                        }
                     }
 
                     response["phase"] = watcher.Phase;
@@ -203,6 +246,7 @@ namespace ClaudeCodeVsMcp.Tools
                     var run = watcher.Last;
                     var all = await bridge.GetTestsAsync();
                     var scope = Filter(Scope(all, run), Args.Str(args, "filter"), null).ToList();
+                    if (run?.Kind == TestRunKind.Failed) scope = scope.Where(t => Ran(t, run)).ToList();
 
                     var matched = scope
                         .Where(t => outcome == "all" || string.Equals(Outcome(t, run), outcome, StringComparison.OrdinalIgnoreCase))
@@ -305,15 +349,25 @@ namespace ClaudeCodeVsMcp.Tools
                     }, ct);
 
                     var tracked = started.Run;
-                    await Task.WhenAny(transition, tracked.Completion, Task.Delay(waitMs, ct)).ConfigureAwait(false);
+                    var dialog = await WaitAsync(Task.WhenAny(transition, tracked.Completion), waitMs, ct).ConfigureAwait(false);
+                    if (dialog != null)
+                    {
+                        var blocked = DescribeDialog(tracked, dialog);
+                        AddUnknown(blocked, started.Unknown);
+                        return blocked;
+                    }
+
+                    var reached = transition.Status == TaskStatus.RanToCompletion
+                        ? await transition.ConfigureAwait(false)
+                        : null;
 
                     JObject response;
-                    if (transition.Status == TaskStatus.RanToCompletion && transition.Result.Kind == DebugTransitionKind.Break)
+                    if (reached?.Kind == DebugTransitionKind.Break)
                     {
                         response = new JObject
                         {
                             ["status"] = "break",
-                            ["reason"] = transition.Result.Reason,
+                            ["reason"] = reached.Reason,
                             ["debugger"] = await UiThread.RunAsync(() => DebugTools.BuildState(), ct)
                         };
                     }
@@ -533,6 +587,59 @@ namespace ClaudeCodeVsMcp.Tools
             return header;
         }
 
+        /// <summary>
+        /// Attend la tache au plus waitMs. Renvoie la boite modale qui bloque Visual Studio si une
+        /// apparait et persiste (typiquement : build en echec, 'executer la derniere version
+        /// compilee ?'), sinon null. Ne touche pas au thread UI, que la boite bloquerait.
+        /// </summary>
+        private static async Task<ModalDialogs.Dialog> WaitAsync(Task task, int waitMs, CancellationToken ct)
+        {
+            var deadline = Environment.TickCount + waitMs;
+            int? dialogSince = null;
+
+            while (!task.IsCompleted)
+            {
+                var remaining = deadline - Environment.TickCount;
+                if (remaining <= 0) return null;
+
+                await Task.WhenAny(task, Task.Delay(Math.Min(DialogPollMs, remaining), ct)).ConfigureAwait(false);
+                ct.ThrowIfCancellationRequested();
+                if (task.IsCompleted) return null;
+
+                var dialog = ModalDialogs.FindTop();
+                if (dialog == null)
+                {
+                    dialogSince = null;
+                    continue;
+                }
+
+                dialogSince = dialogSince ?? Environment.TickCount;
+                if (Environment.TickCount - dialogSince.Value >= DialogGraceMs) return dialog;
+            }
+            return null;
+        }
+
+        private static JObject DescribeDialog(TestRun run, ModalDialogs.Dialog dialog)
+        {
+            var response = DescribeDialog(dialog);
+            foreach (var property in DescribeRunHeader(run).Properties())
+            {
+                response[property.Name] = property.Value;
+            }
+            return response;
+        }
+
+        private static JObject DescribeDialog(ModalDialogs.Dialog dialog)
+        {
+            var response = new JObject();
+            response["status"] = "dialog_open";
+            response["dialog"] = dialog.ToJson();
+            response["hint"] = "Visual Studio attend une reponse a cette boite de dialogue. Apres un build en echec, " +
+                               "repondre 'No' avec answer_dialog, lire get_errors, corriger puis relancer ; " +
+                               "'Yes' execute la derniere version compilee. Ensuite, test_status.";
+            return response;
+        }
+
         private static JObject DescribeRunning(TestRun run, TestRunWatcher watcher)
         {
             var response = DescribeRunHeader(run);
@@ -550,7 +657,8 @@ namespace ClaudeCodeVsMcp.Tools
                 ["name"] = test.FullyQualifiedName,
                 ["displayName"] = test.DisplayName,
                 ["state"] = StateName(test.State),
-                ["project"] = SafeFileName(test.Source)
+                ["project"] = SafeFileName(test.Source),
+                ["framework"] = SafeFolderName(test.Source)
             };
             if (!string.IsNullOrEmpty(test.FilePath)) item["file"] = test.FilePath;
             if (test.LineNumber > 0) item["line"] = test.LineNumber;
@@ -605,10 +713,18 @@ namespace ClaudeCodeVsMcp.Tools
             };
         }
 
-        private static string DiscoveryState(TestWindowBridge bridge, TestRunWatcher watcher)
+        /// <summary>
+        /// Observe : juste apres l'ouverture d'une solution, l'Explorateur compte deja des tests alors
+        /// que la liste revient vide tant que son magasin n'est pas charge ; c'est 'loading'.
+        /// </summary>
+        private static string DiscoveryState(TestWindowBridge bridge, TestRunWatcher watcher, int listed)
         {
             if (watcher.Phase == "discovering") return "discovering";
-            return bridge.GetCounts() == null ? "not_initialized" : "ready";
+
+            var counts = bridge.GetCounts();
+            if (counts == null) return "not_initialized";
+            if (listed == 0 && counts.Passed + counts.Failed + counts.Skipped + counts.NotRun > 0) return "loading";
+            return "ready";
         }
 
         private static void AddUnknown(JObject response, List<string> unknown)
@@ -628,6 +744,14 @@ namespace ClaudeCodeVsMcp.Tools
             if (string.IsNullOrEmpty(path)) return null;
             try { return Path.GetFileNameWithoutExtension(path); }
             catch (ArgumentException) { return path; }
+        }
+
+        /// <summary>Dossier de l'assemblage, qui distingue les cibles d'un projet multi-cible (net10.0...).</summary>
+        private static string SafeFolderName(string path)
+        {
+            if (string.IsNullOrEmpty(path)) return null;
+            try { return Path.GetFileName(Path.GetDirectoryName(path)); }
+            catch (ArgumentException) { return null; }
         }
 
         private static void LogFault(Task task)

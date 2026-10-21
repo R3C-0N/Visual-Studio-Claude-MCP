@@ -721,7 +721,7 @@ namespace ClaudeCodeVsMcp.Tools
         }
 
         /// <summary>Etat courant du debogueur, lu sur le thread UI.</summary>
-        private static JObject BuildState()
+        internal static JObject BuildState()
         {
             Microsoft.VisualStudio.Shell.ThreadHelper.ThrowIfNotOnUIThread();
 

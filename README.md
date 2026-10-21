@@ -27,6 +27,9 @@ travaille dans votre IDE :
 - « Renomme `Total` en `Montant` partout » ou « ajoute le using manquant » → il passe par Roslyn
   (`rename_symbol`, `apply_code_fix`) au lieu d'éditer du texte, et rien n'est appliqué si la
   modification casse la compilation.
+- « Lance les tests de `OrderService` et dis-moi pourquoi ça échoue » → il les exécute dans
+  l'Explorateur de tests et lit, test par test, le message d'erreur et la pile ; au besoin, il
+  relance le test fautif sous le débogueur.
 - « Le programme est figé, regarde » → il le met en pause et lit les piles de tous les threads,
   regroupées : un interblocage saute aux yeux.
 - « Regarde ce que j'ai sélectionné » → il lit votre sélection dans l'éditeur ou la console.
@@ -80,6 +83,7 @@ C'est tout. Demandez à Claude de compiler votre solution pour valider.
 | Refactoring | `rename_symbol`, `apply_code_fix` |
 | Documents | `get_dirty_documents`, `save_documents` |
 | Compilation | `build`, `build_status`, `cancel_build`, `get_errors` |
+| Tests | `list_tests`, `run_tests`, `test_status`, `test_results`, `cancel_tests`, `debug_tests` |
 | Débogueur | `debug_start`, `debug_stop`, `debug_pause`, `debug_continue`, `debug_step`, `debug_state`, `run_to_line`, `set_next_statement`, `debug_attach`, `debug_detach` |
 | Threads | `list_threads`, `switch_thread`, `get_all_stacks` |
 | Points d'arrêt | `set_breakpoint`, `list_breakpoints`, `update_breakpoint`, `clear_breakpoints` |
@@ -119,20 +123,56 @@ les détecte sans passer par le thread UI qu'elles bloquent :
 Ces deux outils s'exécutent même quand un autre appel est en cours sur l'instance. Les boîtes
 natives (MessageBox) sont lues par Win32, les boîtes WPF par UI Automation.
 
+### Tests
+
+Les outils de test passent par l'Explorateur de tests de Visual Studio, quel que soit le framework
+(MSTest, xUnit, NUnit…), et rendent des résultats structurés au lieu du texte de la fenêtre :
+
+```
+list_tests   filter: "OrderService"                        → noms complets, état, projet, cible
+run_tests    tests: ["MyApp.Tests.OrderServiceTests.Total"] → bilan : passed/failed/skipped/notRun
+test_results outcome: "failed"                             → message d'erreur et pile de chaque échec
+debug_tests  tests: ["MyApp.Tests.OrderServiceTests.Total"] → arrêt sur le point d'arrêt
+```
+
+- `run_tests` cible des noms complets (`tests`), un texte (`filter`, `project`), les échecs à
+  rejouer (`failed_only`) ou, sans argument, tous les tests. Les lignes d'une théorie partagent un
+  même nom complet : `targets` compte les noms, `total` les entrées de l'Explorateur.
+- L'Explorateur compile d'abord ce qui a changé. Si le build échoue, Visual Studio demande s'il faut
+  exécuter la dernière version compilée : la réponse porte alors le statut `dialog_open` et la
+  boîte. Répondre avec `answer_dialog` — `No` donne le statut `not_started`, à lire avec
+  `get_errors` ; `Yes` exécute les anciens binaires.
+- Comme pour `build`, au-delà de `wait_ms` la réponse porte le statut `running` ; `test_status`
+  donne la phase (`building`, `discovering`, `running`…) puis le bilan. Il voit aussi les exécutions
+  lancées à la main depuis l'Explorateur, mais seulement à leur démarrage : pendant le build qui les
+  précède, il affiche encore le bilan précédent avec une note.
+- `cancel_tests` arrête une exécution à tout moment, build compris (statut `cancelled`).
+- Un test ciblé qui n'a pas tourné apparaît en `notRun` plutôt qu'avec son ancien résultat.
+- `debug_tests` exige qu'aucune session de débogage ne soit en cours. Au statut `break`,
+  `get_stack`, `get_locals` et `evaluate` s'utilisent comme d'habitude ; une assertion en échec
+  arrête aussi le débogueur, comme dans l'Explorateur.
+- Fichier et ligne d'un test ne sont donnés que si Visual Studio les connaît, ce qui est rare avant
+  une première exécution : `find_symbol` sur le nom complet les retrouve. La pile d'un échec, elle,
+  les porte toujours.
+
+Ces outils s'appuient sur des services internes de l'Explorateur de tests, que Microsoft ne
+documente pas (voir *Limites connues*). La démarche doit beaucoup à l'exploration publiée par
+[VsDebugMcp](https://github.com/wuxinmao2008/VsDebugMcp) et
+[VS-MCPServer](https://github.com/CodingWithCalvin/VS-MCPServer).
+
 ### Piloter n'importe quelle fenêtre
 
-Les fenêtres sans API d'automatisation — l'Explorateur de tests en premier — se pilotent par leur
-interface. `ui_snapshot` renvoie l'arbre des contrôles WPF en JSON : chaque nœud porte un `id`, son
+Les fenêtres sans API d'automatisation se pilotent par leur interface. `ui_snapshot` renvoie l'arbre des contrôles WPF en JSON : chaque nœud porte un `id`, son
 type, son nom, sa valeur, son état (`toggle`, `expanded`, `selected`) et la liste des actions qu'il
 accepte. `ui_action` applique une action à un `id` : `click`, `invoke`, `toggle`, `expand`,
 `collapse`, `select`, `set_value`, `scroll_into_view`, `focus`.
 
 ```
-ui_snapshot  window: "Test Explorer"            → arbre : barre d'outils, arborescence des tests
+ui_snapshot  window: "Solution Explorer"        → arbre : barre d'outils, arborescence de la solution
 ui_action    id: 412, action: "expand"           → déplie un projet
-ui_snapshot  root_id: 412                        → ses tests, désormais matérialisés
-ui_action    id: 418, action: "select"           → sélectionne un test
-execute_command command: "TestExplorer.RunSelectedTests"
+ui_snapshot  root_id: 412                        → ses éléments, désormais matérialisés
+ui_action    id: 418, action: "select"           → sélectionne un fichier
+execute_command command: "Edit.OpenWith"
 ```
 
 `ui_windows` liste les légendes des fenêtres ouvertes, pour savoir quoi passer à `window`. Par
@@ -394,9 +434,17 @@ code auquel vous ne faites pas confiance.
   (`answer_dialog`). Les boîtes de dialogue de tâche (*TaskDialog*) ne laissent lire ni leur
   texte ni leurs boutons : `answer_dialog` y tente les réponses standard à l'aveugle. Pensez à activer le rechargement automatique des fichiers modifiés hors de l'éditeur, sinon
   chaque modification faite par Claude ouvre une fenêtre.
-- **Le Test Explorer n'a pas d'API publique** : il se pilote par `ui_snapshot` / `ui_action` ou par
-  `execute_command` (`TestExplorer.RunAllTests`…). Pour un résultat lisible, `dotnet test` reste
-  plus simple.
+- **Les outils de test reposent sur des API internes** de l'Explorateur de tests (`ITestsService`,
+  `OperationBroker`), lues par réflexion : une mise à jour de Visual Studio peut les casser. Ils
+  répondent alors `UNSUPPORTED` en nommant le membre disparu ; en attendant un correctif,
+  `execute_command` (`TestExplorer.RunAllTests`…) et `ui_snapshot` restent possibles.
+- **Les tests ne sont connus qu'après leur découverte**, qui suit le build. Sur une solution
+  fraîchement ouverte, l'Explorateur peut mettre plusieurs minutes à rendre sa liste : `list_tests`
+  répond alors `loading` (ou `discovering`) au bout de 15 s au lieu de bloquer l'instance ; il suffit
+  de le rappeler.
+- **Les outils de test interrogent toute la liste de l'Explorateur** à chaque appel, ce que Visual
+  Studio signale comme coûteux : de l'ordre de la seconde sur quelques centaines de tests, davantage
+  sur une grosse solution. Préférer `test_status` pour suivre une exécution.
 - **`ui_snapshot` ne voit que l'interface WPF** : les zones Win32 ou WinForms hébergées et les
   boîtes de dialogue natives n'y apparaissent pas. Les éléments non affichés d'une liste
   virtualisée non plus.

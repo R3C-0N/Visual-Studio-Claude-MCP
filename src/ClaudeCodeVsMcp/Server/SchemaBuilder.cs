@@ -23,6 +23,18 @@ namespace ClaudeCodeVsMcp.Server
             return Add(name, prop, required);
         }
 
+        /// <summary>Liste de chaines. Args.StrList accepte aussi une chaine seule.</summary>
+        internal SchemaBuilder StrList(string name, string description, bool required = false)
+        {
+            var prop = new JObject
+            {
+                ["type"] = "array",
+                ["items"] = new JObject { ["type"] = "string" },
+                ["description"] = description
+            };
+            return Add(name, prop, required);
+        }
+
         internal SchemaBuilder Int(string name, string description, bool required = false, int? defaultValue = null)
         {
             var prop = new JObject { ["type"] = "integer", ["description"] = description };

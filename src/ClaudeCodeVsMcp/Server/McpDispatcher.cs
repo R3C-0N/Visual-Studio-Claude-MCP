@@ -160,7 +160,9 @@ namespace ClaudeCodeVsMcp.Server
                     "Pour renommer ou corriger (using manquant, interface a implementer...), preferer rename_symbol " +
                     "et apply_code_fix a une edition de texte, en commencant par preview:true. " +
                     "Pour un programme bloque, debug_pause puis get_all_stacks montre ou attend chaque thread. " +
-                    "Pour une fenetre sans outil dedie (Explorateur de tests...), ui_snapshot donne l'arbre des controles " +
+                    "Pour les tests, list_tests, run_tests, test_status et test_results passent par l'Explorateur de tests " +
+                    "et renvoient les resultats structures (message, pile) ; debug_tests lance un test sous le debogueur. " +
+                    "Pour une fenetre sans outil dedie, ui_snapshot donne l'arbre des controles " +
                     "avec des ids, ui_action agit dessus ; execute_command lance une commande nommee de Visual Studio."
             };
         }

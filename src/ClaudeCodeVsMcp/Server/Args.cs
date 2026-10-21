@@ -1,4 +1,6 @@
 using System;
+using System.Collections.Generic;
+using System.Linq;
 using Newtonsoft.Json.Linq;
 
 namespace ClaudeCodeVsMcp.Server
@@ -20,6 +22,20 @@ namespace ClaudeCodeVsMcp.Server
             if (value == null)
                 throw McpToolException.InvalidArgs("Le parametre requis '" + name + "' est absent.");
             return value;
+        }
+
+        /// <summary>Liste de chaines non vides, ou null si absente. Une chaine seule vaut une liste d'un element.</summary>
+        internal static List<string> StrList(JObject args, string name)
+        {
+            var token = args?[name];
+            if (token == null || token.Type == JTokenType.Null) return null;
+
+            var values = token.Type == JTokenType.Array
+                ? token.Children().Where(t => t.Type != JTokenType.Null).Select(t => t.Type == JTokenType.String ? (string)t : t.ToString())
+                : new[] { token.Type == JTokenType.String ? (string)token : token.ToString() };
+
+            var list = values.Where(v => !string.IsNullOrWhiteSpace(v)).Select(v => v.Trim()).ToList();
+            return list.Count == 0 ? null : list;
         }
 
         internal static int Int(JObject args, string name, int fallback)

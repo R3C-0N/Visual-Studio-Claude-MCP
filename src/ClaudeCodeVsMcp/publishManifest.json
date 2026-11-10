@@ -4,7 +4,7 @@
   "identity": {
     "internalName": "claude-vs-mcp-bridge"
   },
-  "overview": "../../README.md",
+  "overview": "marketplace-overview.md",
   "priceCategory": "free",
   "publisher": "MMedard",
   "private": false,

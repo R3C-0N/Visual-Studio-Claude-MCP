@@ -23,6 +23,9 @@ namespace ClaudeCodeVsMcp.Tools
             registry.Add(
                 "build",
                 "Compile la solution ou un projet, et renvoie le verdict avec les erreurs. " +
+                "Les projets multi-cibles ne sont compiles que pour une cible : par defaut la cible active " +
+                "de l'IDE (liste deroulante de la barre d'outils), ou celle fixee par set_configuration " +
+                "(framework). Le champ 'framework' de la reponse dit laquelle. " +
                 "Si le build depasse wait_ms, la reponse a le statut 'running' : ce n'est pas une erreur, " +
                 "rappeler build_status pour obtenir le verdict.",
                 SchemaBuilder.New()
@@ -39,7 +42,8 @@ namespace ClaudeCodeVsMcp.Tools
 
                     // Lancement sur le thread UI, attente en arriere-plan : bloquer le thread UI
                     // ici empecherait le build de progresser et figerait l'IDE.
-                    var started = await UiThread.RunAsync(() =>
+                    TargetFrameworkChoice target = null;
+                    var started = await UiThread.RunAsync(async () =>
                     {
                         var solution = DteProvider.RequireSolution();
                         var build = solution.SolutionBuild;
@@ -49,7 +53,16 @@ namespace ClaudeCodeVsMcp.Tools
                             return new JObject { ["alreadyRunning"] = true };
                         }
 
+                        // Cible unique : resolue et posee AVANT le lancement, le fournisseur de
+                        // proprietes de build la lit au demarrage de chaque projet. Effacee par
+                        // BuildWatcher a la fin du build. Un clean n'est pas concerne.
+                        if (!string.Equals(action, "clean", StringComparison.OrdinalIgnoreCase))
+                        {
+                            target = await SingleTargetBuild.ResolveAsync(solution);
+                        }
+
                         var task = watcher.Arm();
+                        SingleTargetBuild.Begin(target?.Framework);
 
                         switch (action.ToLowerInvariant())
                         {
@@ -100,12 +113,15 @@ namespace ClaudeCodeVsMcp.Tools
                             ["status"] = "running",
                             ["action"] = action,
                             ["joinedExistingBuild"] = wasAlreadyRunning,
+                            ["framework"] = DescribeTarget(target),
                             ["hint"] = "Le build depasse wait_ms. Rappeler build_status pour le verdict."
                         };
                     }
 
                     var outcome = await pending.ConfigureAwait(false);
-                    return await SummarizeAsync(outcome, action, ct).ConfigureAwait(false);
+                    var summary = await SummarizeAsync(outcome, action, ct).ConfigureAwait(false);
+                    if (target != null) summary["framework"] = DescribeTarget(target);
+                    return summary;
                 });
 
             registry.Add(
@@ -208,6 +224,21 @@ namespace ClaudeCodeVsMcp.Tools
         }
 
         /// <summary>Complete le verdict du build par les erreurs de la Liste d'erreurs.</summary>
+        /// <summary>Cible compilee, rappelee dans chaque reponse pour eviter les surprises.</summary>
+        internal static JToken DescribeTarget(TargetFrameworkChoice target)
+        {
+            if (target == null) return JValue.CreateNull();
+            if (target.Framework == null)
+            {
+                return target.Source == "session"
+                    ? "toutes les cibles (set_configuration framework='all')"
+                    : "toutes les cibles (pas de cible active dans l'IDE)";
+            }
+            return target.Framework + (target.Source == "session"
+                ? " (reglage de session, set_configuration)"
+                : " (cible active de l'IDE)");
+        }
+
         private static async Task<JObject> SummarizeAsync(BuildOutcome outcome, string action, CancellationToken ct)
         {
             return await UiThread.RunAsync(async () =>

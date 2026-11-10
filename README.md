@@ -1,238 +1,258 @@
 # Claude Code ↔ Visual Studio
 
-Pilotez Visual Studio depuis Claude Code : compiler, lire les erreurs, poser des points d'arrêt,
-dérouler le débogueur pas à pas et inspecter les variables — sans quitter votre terminal.
+**English** · [Français](README.fr.md)
 
-L'extension héberge un serveur [MCP](https://modelcontextprotocol.io) dans Visual Studio et expose
-l'IDE comme un jeu d'outils que Claude Code peut appeler.
+Drive Visual Studio from Claude Code: build, read the errors, set breakpoints, step through the
+debugger and inspect variables, all without leaving your terminal.
 
-**Visual Studio 2022 (17.x) et 2026 (18.x)** · projets **C# / .NET**
+The extension hosts an [MCP](https://modelcontextprotocol.io) server inside Visual Studio and exposes
+the IDE as a set of tools that Claude Code can call.
+
+**Visual Studio 2022 (17.x) and 2026 (18.x)** · **C# / .NET** projects
 
 ---
 
-## Ce que ça change
+## What it changes
 
-Sans l'extension, Claude Code édite des fichiers et lance `dotnet build` à l'aveugle. Avec, il
-travaille dans votre IDE :
+Without the extension, Claude Code edits files and runs `dotnet build` blindly. With it, Claude
+works inside your IDE:
 
-- « Compile et corrige les erreurs » → il compile, lit la liste d'erreurs structurée avec code
-  (`CS0103`…), fichier, ligne et colonne, corrige, recompile.
-- « Pose un point d'arrêt ligne 42 et dis-moi pourquoi `total` est négatif » → il pose le point,
-  lance le débogage, attend l'arrêt, lit les variables locales et la pile d'appels.
-- « Trace la valeur de `i` à chaque passage sans arrêter le programme » → il pose un tracepoint.
-- « D'où vient cette `InvalidOperationException` avalée par un `catch` ? » → il fait arrêter le
-  débogueur à la levée et lit l'exception : type, message, fichier et ligne d'origine.
-- « Qui appelle `Apply` ? » → il demande les références à Roslyn, qui analyse déjà la solution :
-  les homonymes sont exclus et les surcharges distinguées, ce qu'une recherche de texte ne fait pas.
-- « Renomme `Total` en `Montant` partout » ou « ajoute le using manquant » → il passe par Roslyn
-  (`rename_symbol`, `apply_code_fix`) au lieu d'éditer du texte, et rien n'est appliqué si la
-  modification casse la compilation.
-- « Lance les tests de `OrderService` et dis-moi pourquoi ça échoue » → il les exécute dans
-  l'Explorateur de tests et lit, test par test, le message d'erreur et la pile ; au besoin, il
-  relance le test fautif sous le débogueur.
-- « Le programme est figé, regarde » → il le met en pause et lit les piles de tous les threads,
-  regroupées : un interblocage saute aux yeux.
-- « Regarde ce que j'ai sélectionné » → il lit votre sélection dans l'éditeur ou la console.
+- "Build and fix the errors" → it builds, reads the structured error list with code
+  (`CS0103`…), file, line and column, fixes the errors, and builds again.
+- "Set a breakpoint on line 42 and tell me why `total` is negative" → it sets the breakpoint,
+  starts debugging, waits for the break, then reads the locals and the call stack.
+- "Trace the value of `i` on every pass without stopping the program" → it sets a tracepoint.
+- "Where does this `InvalidOperationException` swallowed by a `catch` come from?" → it makes the
+  debugger break when the exception is thrown and reads it: type, message, source file and line.
+- "Who calls `Apply`?" → it asks Roslyn, which has already analyzed the solution, for the
+  references: same-name symbols are excluded and overloads told apart, which a text search cannot do.
+- "Rename `Total` to `Amount` everywhere" or "add the missing using" → it goes through Roslyn
+  (`rename_symbol`, `apply_code_fix`) instead of editing text, and nothing is applied if the change
+  breaks the build.
+- "Run the `OrderService` tests and tell me why they fail" → it runs them in Test Explorer and
+  reads, test by test, the error message and the stack; if needed, it reruns the failing test
+  under the debugger.
+- "The program is frozen, take a look" → it pauses it and reads the stacks of all threads,
+  grouped: a deadlock stands out at once.
+- "Look at what I selected" → it reads your selection in the editor or the console.
 
-C'est le contrôle du débogueur qui fait la différence : aucun outil en ligne de commande ne le
-remplace.
+Control of the debugger is what makes the difference: no command-line tool can replace it.
 
 ---
 
 ## Installation
 
-**1. Télécharger l'extension**
+**1. Get the extension**
 
-Récupérez `ClaudeCodeVsMcp.vsix` depuis la
-[dernière release](https://github.com/R3C-0N/Visual-Studio-Claude-MCP/releases/latest).
+Install **Claude Code MCP Bridge** from the
+[Visual Studio Marketplace](https://marketplace.visualstudio.com/items?itemName=MMedard.claude-vs-mcp-bridge),
+or download `ClaudeCodeVsMcp.vsix` from the
+[latest release](https://github.com/R3C-0N/Visual-Studio-Claude-MCP/releases/latest).
 
-**2. Installer**
+**2. Install**
 
-Fermez Visual Studio, puis double-cliquez sur le `.vsix`.
+Close Visual Studio, then double-click the `.vsix`.
 
-**3. Enregistrer le serveur auprès de Claude Code**
+**3. Register the server with Claude Code**
 
-Relancez Visual Studio et ouvrez une solution. Dans la fenêtre **Sortie**, choisissez
-**Claude MCP** dans la liste « Afficher la sortie à partir de ». La commande à copier s'y trouve,
-jeton compris :
+Restart Visual Studio and open a solution. In the **Output** window, choose **Claude MCP** in the
+"Show output from" list. The command to copy is there, token included:
 
 ```
-claude mcp add --transport http visual-studio http://127.0.0.1:5230/mcp --header "Authorization: Bearer <votre-jeton>"
+claude mcp add --transport http visual-studio http://127.0.0.1:5230/mcp --header "Authorization: Bearer <your-token>"
 ```
 
-Le jeton est propre à votre machine et généré au premier lancement. Ajoutez `--scope user` pour
-rendre le serveur disponible depuis n'importe quel répertoire, et pas seulement celui où vous
-lancez la commande.
+The token is specific to your machine and generated on first launch. Add `--scope user` to make
+the server available from any directory, not only the one where you run the command.
 
-**4. Vérifier**
+**4. Check**
 
 ```powershell
 claude mcp list        # visual-studio ... ✔ Connected
 ```
 
-C'est tout. Demandez à Claude de compiler votre solution pour valider.
+That's it. Ask Claude to build your solution to confirm.
 
 ---
 
-## Outils disponibles
+## Available tools
 
-| Domaine | Outils |
+| Area | Tools |
 |---|---|
 | Solution | `solution_info`, `list_projects`, `open_file`, `set_startup_project`, `set_configuration` |
 | Navigation | `find_symbol`, `go_to_definition`, `find_references` |
 | Refactoring | `rename_symbol`, `apply_code_fix` |
 | Documents | `get_dirty_documents`, `save_documents` |
-| Compilation | `build`, `build_status`, `cancel_build`, `get_errors` |
+| Build | `build`, `build_status`, `cancel_build`, `get_errors` |
 | Tests | `list_tests`, `run_tests`, `test_status`, `test_results`, `cancel_tests`, `debug_tests` |
-| Débogueur | `debug_start`, `debug_stop`, `debug_pause`, `debug_continue`, `debug_step`, `debug_state`, `run_to_line`, `set_next_statement`, `debug_attach`, `debug_detach` |
+| Debugger | `debug_start`, `debug_stop`, `debug_pause`, `debug_continue`, `debug_step`, `debug_state`, `run_to_line`, `set_next_statement`, `debug_attach`, `debug_detach` |
 | Threads | `list_threads`, `switch_thread`, `get_all_stacks` |
-| Points d'arrêt | `set_breakpoint`, `list_breakpoints`, `update_breakpoint`, `clear_breakpoints` |
+| Breakpoints | `set_breakpoint`, `list_breakpoints`, `update_breakpoint`, `clear_breakpoints` |
 | Inspection | `evaluate`, `get_locals`, `get_stack` |
 | Exceptions | `break_on_exception`, `get_exception` |
-| Sorties | `list_output_panes`, `get_output_pane` |
-| Sélection | `get_selection`, `take_pending_context` |
-| Interface | `ui_windows`, `ui_snapshot`, `ui_action`, `execute_command` |
-| Boîtes de dialogue | `get_dialog`, `answer_dialog` |
+| Output | `list_output_panes`, `get_output_pane` |
+| Selection | `get_selection`, `take_pending_context` |
+| UI | `ui_windows`, `ui_snapshot`, `ui_action`, `execute_command` |
+| Dialogs | `get_dialog`, `answer_dialog` |
 | Instances | `list_instances`, `use_instance`, `server_info` |
 
-Les opérations longues — compilation, exécution — acceptent un `wait_ms`. Au-delà, la réponse porte
-le statut `running` : ce n'est pas une erreur mais un état à ré-interroger.
+Long operations (build, run) accept a `wait_ms`. Past it, the response carries the status
+`running`: this is not an error but a state to poll again.
 
-`debug_stop` termine directement les processus débogués au lieu d'émettre la commande *Arrêter le
-débogage* de Visual Studio, qui ouvre selon le projet une confirmation modale. Passer
-`force: false` pour retrouver la commande d'origine — utile si la session est attachée à un
-processus qu'il ne faut pas tuer. Si Visual Studio demande alors confirmation, `debug_stop` répond
-**Oui** et le signale dans `confirmedDialogs` ; avec `confirm: false`, il rend la main avec le
-statut `dialog_open` et le contenu de la boîte.
+### A single target for multi-targeted projects
 
-### Boîtes de dialogue modales
+A build started by `build` compiles only one target (TargetFramework) of multi-targeted projects,
+for example `net10.0-windows10.0.19041.0` without `net10.0-android`. By default, this is the IDE's
+active target, chosen in the toolbar drop-down. `set_configuration` changes it for the session:
 
-Tant qu'une boîte modale est ouverte, Visual Studio ne traite plus aucune commande. L'extension
-les détecte sans passer par le thread UI qu'elles bloquent :
+| `framework` | Effect |
+|---|---|
+| a TFM, e.g. `net10.0-windows10.0.19041.0` | Only this target is built, in every project that declares it |
+| `ide` | Back to the IDE's active target (default behavior) |
+| `all` | All targets, like Visual Studio's *Build* command |
 
-- les outils de débogage (`debug_start`, `debug_continue`, `debug_step`, `debug_pause`,
-  `debug_stop`) rendent la main dès qu'une boîte apparaît, avec le statut `dialog_open`, au lieu
-  d'attendre leur délai ;
-- tout autre outil dont la commande reste bloquée par une boîte (une compilation lancée pendant
-  le débogage ouvre « Voulez-vous arrêter le débogage ? ») rend la main en moins d'une seconde
-  avec l'erreur `DIALOG_OPEN`, qui décrit la boîte. La commande reprend dès qu'on y a répondu ;
-- `get_dialog` lit les boîtes ouvertes (titre, message, boutons) et `answer_dialog` clique un
-  bouton par son libellé, son `id`, ou une réponse standard indépendante de la langue (`yes`,
-  `no`, `ok`, `cancel`…).
+The `build` response repeats the target in its `framework` field. Projects that do not declare this
+target, for example a `net8.0` library, build normally. Nothing is written to disk: no `.csproj`, no
+`.csproj.user`, no change to the IDE drop-down. Builds started by hand in Visual Studio are not
+affected.
 
-Ces deux outils s'exécutent même quand un autre appel est en cours sur l'instance. Les boîtes
-natives (MessageBox) sont lues par Win32, les boîtes WPF par UI Automation.
+Visual Studio already does the same with F5, but only for the startup project. The bridge supplies
+the `TargetFramework` build property to the project system during its own builds, through the public
+`ExportBuildGlobalPropertiesProvider` extension point.
+
+`debug_stop` terminates the debugged processes directly instead of issuing Visual Studio's *Stop
+Debugging* command, which, depending on the project, opens a modal confirmation. Pass
+`force: false` to get the original command back, which is useful if the session is attached to a
+process that must not be killed. If Visual Studio then asks for confirmation, `debug_stop` answers
+**Yes** and reports it in `confirmedDialogs`; with `confirm: false`, it returns with the status
+`dialog_open` and the content of the dialog.
+
+### Modal dialogs
+
+While a modal dialog is open, Visual Studio processes no commands at all. The extension detects
+them without going through the UI thread they block:
+
+- the debugging tools (`debug_start`, `debug_continue`, `debug_step`, `debug_pause`,
+  `debug_stop`) return as soon as a dialog appears, with the status `dialog_open`, instead of
+  waiting for their timeout;
+- any other tool whose command is blocked by a dialog (a build started while debugging opens "Do
+  you want to stop debugging?") returns in under a second with the error `DIALOG_OPEN`, which
+  describes the dialog. The command resumes once the dialog is answered;
+- `get_dialog` reads the open dialogs (title, message, buttons) and `answer_dialog` clicks a
+  button by its label, its `id`, or a language-independent standard answer (`yes`, `no`, `ok`,
+  `cancel`…).
+
+These two tools run even while another call is in progress on the instance. Native dialogs
+(MessageBox) are read through Win32, WPF dialogs through UI Automation.
 
 ### Tests
 
-Les outils de test passent par l'Explorateur de tests de Visual Studio, quel que soit le framework
-(MSTest, xUnit, NUnit…), et rendent des résultats structurés au lieu du texte de la fenêtre :
+The test tools go through Visual Studio's Test Explorer, whatever the framework (MSTest, xUnit,
+NUnit…), and return structured results instead of the window's text:
 
 ```
-list_tests   filter: "OrderService"                        → noms complets, état, projet, cible
-run_tests    tests: ["MyApp.Tests.OrderServiceTests.Total"] → bilan : passed/failed/skipped/notRun
-test_results outcome: "failed"                             → message d'erreur et pile de chaque échec
-debug_tests  tests: ["MyApp.Tests.OrderServiceTests.Total"] → arrêt sur le point d'arrêt
+list_tests   filter: "OrderService"                        → full names, state, project, target
+run_tests    tests: ["MyApp.Tests.OrderServiceTests.Total"] → summary: passed/failed/skipped/notRun
+test_results outcome: "failed"                             → error message and stack of each failure
+debug_tests  tests: ["MyApp.Tests.OrderServiceTests.Total"] → break on the breakpoint
 ```
 
-- `run_tests` cible des noms complets (`tests`), un texte (`filter`, `project`), les échecs à
-  rejouer (`failed_only`) ou, sans argument, tous les tests. Les lignes d'une théorie partagent un
-  même nom complet : `targets` compte les noms, `total` les entrées de l'Explorateur.
-- L'Explorateur compile d'abord ce qui a changé. Si le build échoue, Visual Studio demande s'il faut
-  exécuter la dernière version compilée : la réponse porte alors le statut `dialog_open` et la
-  boîte. Répondre avec `answer_dialog` — `No` donne le statut `not_started`, à lire avec
-  `get_errors` ; `Yes` exécute les anciens binaires.
-- Comme pour `build`, au-delà de `wait_ms` la réponse porte le statut `running` ; `test_status`
-  donne la phase (`building`, `discovering`, `running`…) puis le bilan. Il voit aussi les exécutions
-  lancées à la main depuis l'Explorateur, mais seulement à leur démarrage : pendant le build qui les
-  précède, il affiche encore le bilan précédent avec une note.
-- `cancel_tests` arrête une exécution à tout moment, build compris (statut `cancelled`).
-- Un test ciblé qui n'a pas tourné apparaît en `notRun` plutôt qu'avec son ancien résultat.
-- `debug_tests` exige qu'aucune session de débogage ne soit en cours. Au statut `break`,
-  `get_stack`, `get_locals` et `evaluate` s'utilisent comme d'habitude ; une assertion en échec
-  arrête aussi le débogueur, comme dans l'Explorateur.
-- Fichier et ligne d'un test ne sont donnés que si Visual Studio les connaît, ce qui est rare avant
-  une première exécution : `find_symbol` sur le nom complet les retrouve. La pile d'un échec, elle,
-  les porte toujours.
+- `run_tests` targets full names (`tests`), a text (`filter`, `project`), the failures to rerun
+  (`failed_only`) or, with no argument, all tests. The rows of a theory share the same full name:
+  `targets` counts names, `total` counts Test Explorer entries.
+- Test Explorer first builds what has changed. If the build fails, Visual Studio asks whether to
+  run the last successful build: the response then carries the status `dialog_open` and the dialog.
+  Answer with `answer_dialog`: `No` gives the status `not_started`, to be read with `get_errors`;
+  `Yes` runs the old binaries.
+- As with `build`, past `wait_ms` the response carries the status `running`; `test_status` gives
+  the phase (`building`, `discovering`, `running`…) then the summary. It also sees runs started by
+  hand from Test Explorer, but only once they start: during the build that precedes them, it still
+  shows the previous summary with a note.
+- `cancel_tests` stops a run at any time, build included (status `cancelled`).
+- A targeted test that did not run appears as `notRun` rather than with its old result.
+- `debug_tests` requires that no debugging session is in progress. At the `break` status,
+  `get_stack`, `get_locals` and `evaluate` work as usual; a failing assertion also breaks the
+  debugger, as in Test Explorer.
+- A test's file and line are given only if Visual Studio knows them, which is rare before a first
+  run: `find_symbol` on the full name finds them. The stack of a failure always carries them.
 
-Ces outils s'appuient sur des services internes de l'Explorateur de tests, que Microsoft ne
-documente pas (voir *Limites connues*). La démarche doit beaucoup à l'exploration publiée par
-[VsDebugMcp](https://github.com/wuxinmao2008/VsDebugMcp) et
+These tools rely on internal Test Explorer services that Microsoft does not document (see *Known
+limitations*). The approach owes a lot to the exploration published by
+[VsDebugMcp](https://github.com/wuxinmao2008/VsDebugMcp) and
 [VS-MCPServer](https://github.com/CodingWithCalvin/VS-MCPServer).
 
-### Piloter n'importe quelle fenêtre
+### Driving any window
 
-Les fenêtres sans API d'automatisation se pilotent par leur interface. `ui_snapshot` renvoie l'arbre des contrôles WPF en JSON : chaque nœud porte un `id`, son
-type, son nom, sa valeur, son état (`toggle`, `expanded`, `selected`) et la liste des actions qu'il
-accepte. `ui_action` applique une action à un `id` : `click`, `invoke`, `toggle`, `expand`,
-`collapse`, `select`, `set_value`, `scroll_into_view`, `focus`.
+Windows without an automation API are driven through their UI. `ui_snapshot` returns the tree of
+WPF controls as JSON: each node carries an `id`, its type, its name, its value, its state
+(`toggle`, `expanded`, `selected`) and the list of actions it accepts. `ui_action` applies an
+action to an `id`: `click`, `invoke`, `toggle`, `expand`, `collapse`, `select`, `set_value`,
+`scroll_into_view`, `focus`.
 
 ```
-ui_snapshot  window: "Solution Explorer"        → arbre : barre d'outils, arborescence de la solution
-ui_action    id: 412, action: "expand"           → déplie un projet
-ui_snapshot  root_id: 412                        → ses éléments, désormais matérialisés
-ui_action    id: 418, action: "select"           → sélectionne un fichier
+ui_snapshot  window: "Solution Explorer"        → tree: toolbar, solution hierarchy
+ui_action    id: 412, action: "expand"           → expands a project
+ui_snapshot  root_id: 412                        → its items, now materialized
+ui_action    id: 418, action: "select"           → selects a file
 execute_command command: "Edit.OpenWith"
 ```
 
-`ui_windows` liste les légendes des fenêtres ouvertes, pour savoir quoi passer à `window`. Par
-défaut `interactive_only` ne garde que les nœuds nommés, valorisés ou actionnables et aplatit les
-conteneurs muets ; `filter` réduit encore l'arbre aux nœuds contenant un texte. Les `id` restent
-valables tant que le contrôle existe : après une action qui recompose la fenêtre, refaire un
-snapshot. Les listes virtualisées n'exposent que les éléments affichés : déplier ou faire défiler,
-puis reprendre un snapshot.
+`ui_windows` lists the captions of the open windows, so you know what to pass to `window`. By
+default `interactive_only` keeps only named, valued or actionable nodes and flattens silent
+containers; `filter` further reduces the tree to nodes containing a text. The `id`s stay valid as
+long as the control exists: after an action that rebuilds the window, take a new snapshot.
+Virtualized lists expose only the displayed items: expand or scroll, then take another snapshot.
 
-`execute_command` exécute une commande nommée de Visual Studio (`View.TestExplorer`,
-`TestExplorer.RunAllTests`, `Edit.FormatDocument`…), ce qui évite souvent de passer par
-l'interface.
+`execute_command` runs a named Visual Studio command (`View.TestExplorer`,
+`TestExplorer.RunAllTests`, `Edit.FormatDocument`…), which often avoids going through the UI.
 
 ---
 
-## Points d'arrêt
+## Breakpoints
 
-`set_breakpoint` couvre cinq variantes, combinables entre elles :
+`set_breakpoint` covers five variants, which can be combined:
 
-| Variante | Paramètre | Comportement |
+| Variant | Parameter | Behavior |
 |---|---|---|
-| Ordinaire | — | interrompt l'exécution |
-| Conditionnel | `condition` | déclenche si l'expression est vraie, ou quand sa valeur change |
-| Tracepoint | `message` | journalise **sans** interrompre |
-| Temporaire | `temporary` | se supprime après son premier déclenchement |
-| Dépendant | `depends_on` | reste désactivé jusqu'à ce qu'un autre point d'arrêt soit atteint |
+| Ordinary | — | breaks execution |
+| Conditional | `condition` | triggers if the expression is true, or when its value changes |
+| Tracepoint | `message` | logs **without** breaking |
+| Temporary | `temporary` | deletes itself after its first hit |
+| Dependent | `depends_on` | stays disabled until another breakpoint is hit |
 
-S'y ajoutent `hit_count` avec son mode (`equal`, `greater_or_equal`, `multiple`) et `filter` pour
-restreindre à un thread.
+On top of that, `hit_count` with its mode (`equal`, `greater_or_equal`, `multiple`) and `filter`
+to restrict it to a thread.
 
-Le message d'un tracepoint accepte la syntaxe de Visual Studio — expressions entre accolades et
-pseudo-variables :
+A tracepoint's message accepts Visual Studio's syntax, with expressions in braces and
+pseudo-variables:
 
 ```
-i = {i}, appelé par $CALLER sur le thread $TID
+i = {i}, called by $CALLER on thread $TID
 ```
 
-Les points d'arrêt sont identifiés par `chemin:ligne`, format attendu par `depends_on` et
+Breakpoints are identified by `path:line`, the format expected by `depends_on` and
 `update_breakpoint`.
 
 ---
 
 ## Exceptions
 
-`break_on_exception` règle la fenêtre *Paramètres d'exception* :
+`break_on_exception` sets the *Exception Settings* window:
 
-| `break_when` | Comportement |
+| `break_when` | Behavior |
 |---|---|
-| `thrown` (défaut) | interrompt dès la levée, même si un `catch` la traite ensuite |
-| `user_unhandled` | interrompt quand elle sort du code utilisateur sans être traitée (*Uniquement mon code*) |
-| `never` | n'interrompt plus |
+| `thrown` (default) | breaks as soon as it is thrown, even if a `catch` then handles it |
+| `user_unhandled` | breaks when it leaves user code unhandled (*Just My Code*) |
+| `never` | no longer breaks |
 
-`exception` accepte un nom complet (`System.InvalidOperationException`), un nom court s'il est sans
-ambiguïté (`NullReferenceException`), ou plusieurs noms séparés par des virgules. Un nom complet
-inconnu — une exception du projet — est ajouté au groupe. Sans `exception`, l'outil liste celles qui
-interrompent à la levée. `group` cible un autre groupe que .NET (`C++`, `Win32`…), `reset_all`
-rétablit les réglages par défaut. Le réglage vaut pour la session en cours comme pour les suivantes.
+`exception` accepts a full name (`System.InvalidOperationException`), a short name if
+unambiguous (`NullReferenceException`), or several comma-separated names. An unknown full name (an
+exception from the project) is added to the group. Without `exception`, the tool lists the ones
+that break when thrown. `group` targets a group other than .NET (`C++`, `Win32`…), `reset_all`
+restores the default settings. The setting applies to the current session as well as the next ones.
 
-Quand le débogueur s'arrête sur une exception, `debug_start` et `debug_continue` le signalent, et
-`get_exception` la décrit :
+When the debugger breaks on an exception, `debug_start` and `debug_continue` report it, and
+`get_exception` describes it:
 
 ```json
 {
@@ -246,276 +266,273 @@ Quand le débogueur s'arrête sur une exception, `debug_start` et `debug_continu
 }
 ```
 
-La pile vient de `StackTrace` de l'exception, avec fichier et ligne quand les symboles sont
-disponibles. Les `AggregateException` détaillent toutes leurs
-exceptions internes (`aggregated`). Pour une exception native ou SEH, sans objet à inspecter,
-`get_exception` rend le code et la description annoncés par le débogueur.
+The stack comes from the exception's `StackTrace`, with file and line when symbols are available.
+`AggregateException`s detail all their inner exceptions (`aggregated`). For a native or SEH
+exception, with no object to inspect, `get_exception` returns the code and description reported
+by the debugger.
 
 ---
 
-## Navigation dans le code
+## Code navigation
 
-`find_symbol`, `go_to_definition` et `find_references` interrogent Roslyn sur la solution que
-Visual Studio a déjà chargée : pas de second chargement, et le résultat est exact là où une recherche
-de texte confond homonymes, surcharges et implémentations d'interface.
+`find_symbol`, `go_to_definition` and `find_references` query Roslyn on the solution Visual
+Studio has already loaded: no second load, and the result is exact where a text search confuses
+same-name symbols, overloads and interface implementations.
 
-Un symbole se désigne de deux façons :
+A symbol can be designated in two ways:
 
-- **par une occurrence** : `file`, `line` et `symbol`, l'identifiant tel qu'il est écrit sur cette
-  ligne. C'est la plus sûre, puisque Claude vient en général de lire le fichier ;
-- **par son nom** : `name`, simple ou qualifié (`ExceptionBreaks.Apply`). S'il est ambigu, l'erreur
-  liste les candidats.
+- **by an occurrence**: `file`, `line` and `symbol`, the identifier as written on that line. This
+  is the safest, since Claude has usually just read the file;
+- **by its name**: `name`, simple or qualified (`ExceptionBreaks.Apply`). If it is ambiguous, the
+  error lists the candidates.
 
 ```json
 { "file": "src/MyApp/Orders.cs", "line": 42, "symbol": "Last" }
 ```
 
-Chaque résultat donne fichier, ligne, colonne, texte de la ligne et projet. `find_symbol` accepte un
-motif (`ExBr` trouve `ExceptionBreaks`), `go_to_definition` rend toutes les parties d'un type
-`partial` et peut ouvrir l'éditeur (`open`). Un symbole du framework ou d'un paquet NuGet renvoie
-son assembly.
+Each result gives file, line, column, line text and project. `find_symbol` accepts a pattern
+(`ExBr` finds `ExceptionBreaks`), `go_to_definition` returns all parts of a `partial` type and can
+open the editor (`open`). A symbol from the framework or a NuGet package returns its assembly.
 
-### Modifications non enregistrées
+### Unsaved changes
 
-Un fichier modifié dans Visual Studio sans être enregistré diffère de ce que Claude lit sur le
-disque. `get_dirty_documents` (éventuellement sur un seul `path`) les liste avant une modification,
-`save_documents` les enregistre. Les résultats de navigation portent `unsaved: true` quand leurs
-lignes viennent d'un tel tampon.
+A file modified in Visual Studio but not saved differs from what Claude reads on disk.
+`get_dirty_documents` (optionally on a single `path`) lists them before a change,
+`save_documents` saves them. Navigation results carry `unsaved: true` when their lines come from
+such a buffer.
 
 ---
 
 ## Refactorings
 
-`rename_symbol` renomme un symbole dans toute la solution, comme F2 ; il se désigne comme pour la
-navigation (`file` + `line` + `symbol`, ou `name`). `apply_code_fix` reprend l'ampoule : sans `fix`,
-il liste les diagnostics d'une ligne et les correctifs proposés ; avec `fix` (index ou partie du
-titre), il applique celui choisi.
+`rename_symbol` renames a symbol across the whole solution, like F2; it is designated as for
+navigation (`file` + `line` + `symbol`, or `name`). `apply_code_fix` reproduces the light bulb:
+without `fix`, it lists the diagnostics of a line and the proposed fixes; with `fix` (index or part
+of the title), it applies the chosen one.
 
 ```json
 { "file": "src/MyApp/Orders.cs", "line": 12, "code": "CS0246", "fix": "using System.Text" }
 ```
 
-Les deux outils suivent le même protocole :
+Both tools follow the same protocol:
 
-- `preview: true` décrit chaque fichier touché, ligne par ligne (avant / après), sans rien écrire ;
-- les erreurs de compilation que la modification **ajouterait** sont listées dans `newErrors`. S'il y
-  en a, rien n'est appliqué, sauf avec `force: true` : c'est ce qui arrête un renommage vers un nom
-  déjà pris ;
-- un fichier partagé par plusieurs cibles d'un projet multi-cible reçoit la même modification
-  partout.
+- `preview: true` describes each affected file, line by line (before / after), without writing
+  anything;
+- the build errors the change **would add** are listed in `newErrors`. If there are any, nothing
+  is applied, unless `force: true` is set: this is what stops a rename to a name already in use;
+- a file shared by several targets of a multi-targeted project receives the same change everywhere.
 
-Les correctifs viennent de Visual Studio (ajouter un `using`, implémenter une interface, règles
-`IDE*`…) et des paquets d'analyseurs du projet.
-
----
-
-## Threads et attachement
-
-Quand le programme est arrêté, `get_all_stacks` donne la pile de chaque thread, en regroupant les
-piles identiques comme la fenêtre *Piles parallèles* : cinquante threads du pool bloqués au même
-endroit tiennent en une entrée, et deux threads qui s'attendent mutuellement ressortent aussitôt.
-`list_threads` résume chaque thread par sa première frame de votre code, `switch_thread` en fait le
-thread courant pour `get_stack`, `get_locals` et `evaluate`.
-
-`run_to_line` exécute jusqu'à une ligne sans point d'arrêt ; `set_next_statement` déplace
-l'instruction suivante dans la fonction courante, par exemple pour rejouer un bloc après avoir
-corrigé une variable. `debug_attach` s'attache à un processus déjà lancé, par PID ou par nom
-(`w3wp`, un service…), et `debug_detach` le laisse continuer sans débogueur.
+The fixes come from Visual Studio (add a `using`, implement an interface, `IDE*` rules…) and from
+the project's analyzer packages.
 
 ---
 
-## Envoyer une sélection depuis Visual Studio
+## Threads and attach
 
-Dans l'éditeur (`Ctrl+Alt+Maj+C` ou clic droit) et dans le menu contextuel de la fenêtre Sortie :
-**« Envoyer à Claude Code »**. La sélection est figée au moment du clic, ce qui évite que Claude
-lise autre chose au moment où vous formulez votre demande.
+When the program is paused, `get_all_stacks` gives each thread's stack, grouping identical stacks
+like the *Parallel Stacks* window: fifty pool threads blocked at the same spot fit in one entry, and
+two threads waiting on each other stand out at once. `list_threads` summarizes each thread by its
+first frame in your code, `switch_thread` makes it the current thread for `get_stack`, `get_locals`
+and `evaluate`.
 
-- Si Claude Code est connecté à l'IDE (`/ide` dans le terminal), la sélection est poussée
-  directement dans le prompt.
-- Sinon elle est mise en file, et Claude la récupère avec `take_pending_context`.
-
-`get_selection` lit également la sélection courante à la demande, sans rien envoyer.
-
----
-
-## Plusieurs instances de Visual Studio
-
-Chaque instance s'enregistre, et Claude Code garde une URL unique : `http://127.0.0.1:5230/mcp`.
-
-- Une seule instance ouverte → rien à faire.
-- Plusieurs → `list_instances` pour les voir, `use_instance` pour choisir, ou le paramètre
-  `instance` sur chaque appel.
-- En cas d'ambiguïté, les outils **refusent de deviner** et renvoient la liste des choix : une
-  compilation lancée dans la mauvaise solution coûte plus cher qu'une question.
-
-Si l'instance qui sert de point d'entrée se ferme, une autre reprend le rôle en moins de dix
-secondes, sans reconfiguration.
+`run_to_line` runs to a line without a breakpoint; `set_next_statement` moves the next statement
+within the current function, for example to replay a block after fixing a variable.
+`debug_attach` attaches to an already running process, by PID or by name (`w3wp`, a service…),
+and `debug_detach` lets it continue without the debugger.
 
 ---
 
-## Ne plus jamais avoir à se reconnecter : le relais stdio
+## Sending a selection from Visual Studio
 
-Claude Code ne retente une connexion HTTP que brièvement : 3 essais à l'ouverture de la session,
-environ 30 secondes après une coupure. Passé ce délai, le serveur est marqué en échec jusqu'à
-un `/mcp` → **Reconnect** manuel. C'est ce qui arrive si Claude Code démarre avant Visual Studio,
-ou si Visual Studio est fermé un moment.
+In the editor (`Ctrl+Alt+Shift+C` or right-click) and in the Output window's context menu:
+**"Envoyer a Claude Code"** (Send to Claude Code). The selection is captured at the moment of the
+click, so Claude does not read something else while you are writing your request.
 
-`tools\vs-mcp-relay.mjs` règle ça. Claude Code le lance comme un serveur **stdio**, donc
-toujours connecté, et le relais transmet chaque appel au hub au moment où il arrive :
+- If Claude Code is connected to the IDE (`/ide` in the terminal), the selection is pushed
+  directly into the prompt.
+- Otherwise it is queued, and Claude retrieves it with `take_pending_context`.
 
-- sans Visual Studio, un appel d'outil attend jusqu'à 30 s, ce qui couvre une reprise de hub,
-  puis répond « Visual Studio n'est pas joignable » au lieu de faire échouer le serveur ;
-- la liste d'outils est gardée en cache et servie même quand Visual Studio est fermé ;
-- dès que Visual Studio revient, le relais prévient Claude Code (`tools/list_changed`) : il n'y a
-  rien à faire.
+`get_selection` also reads the current selection on demand, without sending anything.
 
-Le jeton est relu dans `%APPDATA%\claude-vs-mcp\token` à chaque requête, il n'apparaît donc plus
-dans la configuration. Node 18 ou plus, aucune dépendance.
+---
+
+## Several Visual Studio instances
+
+Each instance registers itself, and Claude Code keeps a single URL: `http://127.0.0.1:5230/mcp`.
+
+- A single instance open → nothing to do.
+- Several → `list_instances` to see them, `use_instance` to choose, or the `instance` parameter
+  on each call.
+- When it is ambiguous, the tools **refuse to guess** and return the list of choices: a build
+  started in the wrong solution costs more than a question.
+
+If the instance acting as the entry point closes, another one takes over the role in less than ten
+seconds, with no reconfiguration.
+
+---
+
+## Never reconnect again: the stdio relay
+
+Claude Code retries an HTTP connection only briefly: 3 attempts when the session opens, about 30
+seconds after a disconnection. After that, the server is marked as failed until a manual `/mcp` →
+**Reconnect**. This happens if Claude Code starts before Visual Studio, or if Visual Studio is
+closed for a while.
+
+`tools\vs-mcp-relay.mjs` solves this. Claude Code launches it as a **stdio** server, so it is
+always connected, and the relay forwards each call to the hub when it arrives:
+
+- without Visual Studio, a tool call waits up to 30 s, which covers a hub takeover, then answers
+  "Visual Studio is not reachable" instead of failing the server;
+- the tool list is cached and served even when Visual Studio is closed;
+- as soon as Visual Studio comes back, the relay notifies Claude Code (`tools/list_changed`):
+  there is nothing to do.
+
+The token is reread from `%APPDATA%\claude-vs-mcp\token` on each request, so it no longer appears in
+the configuration. Node 18 or later, no dependencies.
 
 ```powershell
 claude mcp remove visual-studio --scope user
-claude mcp add visual-studio --scope user -- node "<chemin>\tools\vs-mcp-relay.mjs"
+claude mcp add visual-studio --scope user -- node "<path>\tools\vs-mcp-relay.mjs"
 ```
 
-| Variable | Rôle | Défaut |
+| Variable | Role | Default |
 |---|---|---|
-| `CLAUDE_VS_MCP_URL` | URL du hub | `http://127.0.0.1:<port>/mcp` |
-| `CLAUDE_VS_MCP_HUB_PORT` | Port du hub, si l'URL n'est pas donnée | `5230` |
-| `CLAUDE_VS_MCP_TOKEN` | Jeton, à la place du fichier | relu dans `%APPDATA%` |
-| `CLAUDE_VS_MCP_WAIT_MS` | Attente maximale de Visual Studio par appel d'outil | `30000` |
+| `CLAUDE_VS_MCP_URL` | Hub URL | `http://127.0.0.1:<port>/mcp` |
+| `CLAUDE_VS_MCP_HUB_PORT` | Hub port, if the URL is not given | `5230` |
+| `CLAUDE_VS_MCP_TOKEN` | Token, instead of the file | reread from `%APPDATA%` |
+| `CLAUDE_VS_MCP_WAIT_MS` | Maximum wait for Visual Studio per tool call | `30000` |
 
-Le journal du relais part sur stderr, dans les logs MCP de Claude Code.
-
----
-
-## Sécurité
-
-- Écoute sur `127.0.0.1` uniquement, jamais sur une interface externe.
-- Jeton obligatoire, comparé à temps constant, stocké dans `%APPDATA%\claude-vs-mcp\token`.
-- En-têtes `Origin` et `Host` validés : sans cela, une page web ouverte dans votre navigateur
-  pourrait piloter Visual Studio par DNS rebinding.
-
-**À garder en tête** : ce serveur donne de fait l'exécution de code arbitraire. Une compilation
-lance les targets MSBuild et les scripts pre/post-build du dépôt ouvert, et le débogueur démarre
-des processus. Il tourne avec vos privilèges. Ne l'utilisez pas sur une machine où vous ouvrez du
-code auquel vous ne faites pas confiance.
+The relay's log goes to stderr, into Claude Code's MCP logs.
 
 ---
 
-## Limites connues
+## Security
 
-- **La navigation ne couvre que C# et VB** : Roslyn n'analyse pas le C++. Sur un fichier modifié
-  non enregistré, les positions suivent le tampon de l'éditeur, pas le disque.
-- **Fichier et ligne d'une frame exigent les symboles** (`get_stack`, `debug_state`…) : sans PDB,
-  une frame n'a que sa fonction et son module.
-- **Visual Studio passe au premier plan** à chaque arrêt du débogueur et quand un outil place le
-  curseur (`run_to_line`, `set_next_statement`) : les outils rendent aussitôt la main à la fenêtre
-  que vous utilisiez, mais une frappe tombée dans cet intervalle peut atterrir dans l'éditeur.
-- **Les piles sont celles des threads**, pas les piles logiques `async` : une tâche en attente sans
-  thread n'apparaît pas dans `get_all_stacks`.
-- **`set_next_statement` reste dans la fonction courante**, et ce qui est sauté ou rejoué ne
-  s'annule pas : un effet de bord rejoué s'exécute deux fois.
-- **`apply_code_fix` ne propose que des correctifs de diagnostics** : les refactorings de l'ampoule
-  sans diagnostic (extraire une méthode…) n'y figurent pas. `rename_symbol` ne renomme pas le
-  fichier d'un type renommé.
-- **`get_exception` évalue `Message`, `StackTrace`…** sur l'exception, donc du code du programme
-  débogué : une exception personnalisée qui surcharge `Message` l'exécute.
-- **`evaluate`, `get_locals` et `get_stack` exigent un arrêt** sur point d'arrêt : l'évaluateur
-  d'expressions n'existe pas pendant l'exécution. Évaluer peut avoir des effets de bord, une
-  propriété appelée exécutant son code.
-- **La condition d'un point d'arrêt n'est pas modifiable** après création. `update_breakpoint` le
-  recrée dans ce cas, ce qui remet son compteur de passages à zéro.
-- **Points temporaires et dépendants sont émulés** par l'extension, Visual Studio ne les exposant
-  pas : ils ne survivent pas à un rechargement de la solution et n'apparaissent pas comme tels dans
-  la fenêtre Points d'arrêt.
-- **La sortie d'une application console lancée dans une console externe** n'apparaît pas dans
+- Listens on `127.0.0.1` only, never on an external interface.
+- Mandatory token, compared in constant time, stored in `%APPDATA%\claude-vs-mcp\token`.
+- `Origin` and `Host` headers validated: without this, a web page open in your browser could drive
+  Visual Studio through DNS rebinding.
+
+**Keep in mind**: this server effectively grants arbitrary code execution. A build runs the MSBuild
+targets and pre/post-build scripts of the open repository, and the debugger starts processes. It
+runs with your privileges. Do not use it on a machine where you open code you do not trust.
+
+---
+
+## Known limitations
+
+- **Navigation covers only C# and VB**: Roslyn does not analyze C++. On a modified, unsaved file,
+  positions follow the editor buffer, not the disk.
+- **A frame's file and line require symbols** (`get_stack`, `debug_state`…): without a PDB, a
+  frame has only its function and module.
+- **Visual Studio comes to the foreground** at each debugger break and when a tool places the
+  cursor (`run_to_line`, `set_next_statement`): the tools immediately give focus back to the window
+  you were using, but a keystroke made in that interval can land in the editor.
+- **The stacks are thread stacks**, not logical `async` stacks: an awaiting task with no thread
+  does not appear in `get_all_stacks`.
+- **`set_next_statement` stays within the current function**, and what is skipped or replayed is
+  not undone: a replayed side effect runs twice.
+- **`apply_code_fix` only offers diagnostic fixes**: light-bulb refactorings without a diagnostic
+  (extract method…) are not included. `rename_symbol` does not rename the file of a renamed type.
+- **`get_exception` evaluates `Message`, `StackTrace`…** on the exception, and so runs code from
+  the debugged program: a custom exception that overrides `Message` executes it.
+- **`evaluate`, `get_locals` and `get_stack` require a break** on a breakpoint: the expression
+  evaluator does not exist while the program is running. Evaluating can have side effects, as a
+  called property runs its code.
+- **A breakpoint's condition cannot be modified** after creation. `update_breakpoint` recreates it
+  in that case, which resets its hit count to zero.
+- **Temporary and dependent breakpoints are emulated** by the extension, since Visual Studio does
+  not expose them: they do not survive a solution reload and do not appear as such in the
+  Breakpoints window.
+- **The output of a console application launched in an external console** does not appear in
   `get_output_pane`.
-- **Une boîte de dialogue modale fige l'automatisation** tant qu'on n'y a pas répondu
-  (`answer_dialog`). Les boîtes de dialogue de tâche (*TaskDialog*) ne laissent lire ni leur
-  texte ni leurs boutons : `answer_dialog` y tente les réponses standard à l'aveugle. Pensez à activer le rechargement automatique des fichiers modifiés hors de l'éditeur, sinon
-  chaque modification faite par Claude ouvre une fenêtre.
-- **Les outils de test reposent sur des API internes** de l'Explorateur de tests (`ITestsService`,
-  `OperationBroker`), lues par réflexion : une mise à jour de Visual Studio peut les casser. Ils
-  répondent alors `UNSUPPORTED` en nommant le membre disparu ; en attendant un correctif,
-  `execute_command` (`TestExplorer.RunAllTests`…) et `ui_snapshot` restent possibles.
-- **Les tests ne sont connus qu'après leur découverte**, qui suit le build. Sur une solution
-  fraîchement ouverte, l'Explorateur peut mettre plusieurs minutes à rendre sa liste : `list_tests`
-  répond alors `loading` (ou `discovering`) au bout de 15 s au lieu de bloquer l'instance ; il suffit
-  de le rappeler.
-- **Les outils de test interrogent toute la liste de l'Explorateur** à chaque appel, ce que Visual
-  Studio signale comme coûteux : de l'ordre de la seconde sur quelques centaines de tests, davantage
-  sur une grosse solution. Préférer `test_status` pour suivre une exécution.
-- **`ui_snapshot` ne voit que l'interface WPF** : les zones Win32 ou WinForms hébergées et les
-  boîtes de dialogue natives n'y apparaissent pas. Les éléments non affichés d'une liste
-  virtualisée non plus.
-- Un seul outil s'exécute à la fois par instance : l'automatisation de Visual Studio tolère mal la
-  réentrance.
+- **A modal dialog freezes automation** until it is answered (`answer_dialog`). Task dialogs
+  (*TaskDialog*) let neither their text nor their buttons be read: `answer_dialog` tries the
+  standard answers blindly. Remember to enable automatic reloading of files modified outside the
+  editor, otherwise every change made by Claude opens a dialog.
+- **The test tools rely on internal APIs** of Test Explorer (`ITestsService`, `OperationBroker`),
+  read through reflection: a Visual Studio update can break them. They then answer `UNSUPPORTED`,
+  naming the missing member; until a fix, `execute_command` (`TestExplorer.RunAllTests`…) and
+  `ui_snapshot` remain available.
+- **Tests are known only after their discovery**, which follows the build. On a freshly opened
+  solution, Test Explorer can take several minutes to return its list: `list_tests` then answers
+  `loading` (or `discovering`) after 15 s instead of blocking the instance; just call it again.
+- **The test tools query the whole Test Explorer list** on each call, which Visual Studio flags as
+  expensive: around a second for a few hundred tests, more on a large solution. Prefer
+  `test_status` to follow a run.
+- **`ui_snapshot` only sees the WPF UI**: hosted Win32 or WinForms areas and native dialogs do not
+  appear in it. Nor do the hidden items of a virtualized list.
+- Only one tool runs at a time per instance: Visual Studio automation handles reentrancy poorly.
 
 ---
 
-## Dépannage
+## Troubleshooting
 
-| Symptôme | Piste |
+| Symptom | Lead |
 |---|---|
-| Rien dans le pane « Claude MCP » | `devenv /log`, puis lire `%APPDATA%\Microsoft\VisualStudio\<version>\ActivityLog.xml` |
-| `claude mcp list` échoue | Vérifier d'abord avec `tools\Smoke-Test.ps1` : isole le transport de la configuration client |
-| Port 5230 déjà pris | `Get-NetTCPConnection -LocalPort 5230`, ou définir `CLAUDE_VS_MCP_HUB_PORT` |
-| Mauvaise instance pilotée | `list_instances` puis `use_instance` |
+| Nothing in the "Claude MCP" pane | `devenv /log`, then read `%APPDATA%\Microsoft\VisualStudio\<version>\ActivityLog.xml` |
+| `claude mcp list` fails | Check first with `tools\Smoke-Test.ps1`: it isolates the transport from the client configuration |
+| Port 5230 already in use | `Get-NetTCPConnection -LocalPort 5230`, or set `CLAUDE_VS_MCP_HUB_PORT` |
+| Wrong instance driven | `list_instances` then `use_instance` |
 
-Le journal de l'extension est écrit dans le pane **Claude MCP** et dupliqué dans
+The extension's log is written to the **Claude MCP** pane and duplicated in
 `%TEMP%\claude-vs-mcp\extension-<pid>.log`.
 
 ---
 
-## Développement
+## Development
 
 ```powershell
-pwsh tools\Build.ps1              # compile, produit le .vsix
-pwsh tools\Build.ps1 -Install     # installe (Visual Studio fermé, terminal élevé)
-pwsh tools\Smoke-Test.ps1         # teste le serveur en HTTP brut, sans Claude Code
-pwsh tools\New-Release.ps1        # étiquette, pousse et publie une release
+pwsh tools\Build.ps1              # builds, produces the .vsix
+pwsh tools\Build.ps1 -Install     # installs (Visual Studio closed, elevated terminal)
+pwsh tools\Smoke-Test.ps1         # tests the server over raw HTTP, without Claude Code
+pwsh tools\New-Release.ps1        # tags, pushes and publishes a release
+pwsh tools\Publish-Marketplace.ps1  # publishes the Release .vsix to the Visual Studio Marketplace
 ```
 
-`F5` déploie dans la ruche expérimentale (`/rootsuffix Exp`) sans toucher à votre installation
-principale.
+`F5` deploys to the experimental hive (`/rootsuffix Exp`) without touching your main
+installation.
 
-**Hooks git** — à activer une fois par clone, `core.hooksPath` étant une configuration locale :
+The Marketplace page uses `src\ClaudeCodeVsMcp\marketplace-overview.md`, a short English overview,
+not this README.
+
+**Git hooks**: enable them once per clone, since `core.hooksPath` is a local setting:
 
 ```powershell
 git config core.hooksPath .githooks
 ```
 
-`pre-commit` et `pre-push` refusent toute adresse e-mail non publique. Motif surchargeable via
-`git config hooks.allowedEmail`.
+`pre-commit` and `pre-push` reject any non-public e-mail address. The pattern can be overridden
+with `git config hooks.allowedEmail`.
 
-**Versionnage** — la version vit à un seul endroit, l'attribut `Version` de
-`source.extension.vsixmanifest` ; `AssemblyVersion` et la version annoncée par le serveur en sont
-dérivées à la compilation. Chaque modification l'incrémente : patch pour une correction, mineur
-pour une nouvelle capacité, majeur pour une rupture. Le mécanisme de mise à jour de Visual Studio
-en dépend, `VSIXInstaller` ne remplaçant en place que si la version augmente.
+**Versioning**: the version lives in a single place, the `Version` attribute of
+`source.extension.vsixmanifest`; `AssemblyVersion` and the version announced by the server are
+derived from it at build time. Every change increments it: patch for a fix, minor for a new
+capability, major for a breaking change. Visual Studio's update mechanism depends on it, since
+`VSIXInstaller` only replaces an installed extension in place if the version increases.
 
-### Trois pièges à connaître avant de contribuer
+### Three pitfalls to know before contributing
 
-1. **Les objets d'événements COM doivent être gardés dans des champs.** `dte.Events.BuildEvents`
-   renvoie un nouvel objet à chaque accès ; sans référence forte, le ramasse-miettes le collecte et
-   les événements cessent d'arriver sans la moindre erreur.
-2. **Jamais de surcharge bloquante** (`Build(true)`, `Go(true)`) : le thread UI est celui dont la
-   compilation et le débogueur ont besoin pour progresser. Toujours `false` puis attente de
-   l'événement, et jamais de `.Result` sur le thread UI.
-3. **Les panes de sortie sont localisés** — « Générer » sur un IDE français. Ils sont résolus par
-   GUID, jamais par nom.
+1. **COM event objects must be kept in fields.** `dte.Events.BuildEvents` returns a new object on
+   each access; without a strong reference, the garbage collector collects it and events stop
+   arriving without any error.
+2. **Never use a blocking overload** (`Build(true)`, `Go(true)`): the UI thread is the one the
+   build and the debugger need to make progress. Always `false` then wait for the event, and never
+   `.Result` on the UI thread.
+3. **Output panes are localized** ("Générer" on a French IDE). They are resolved by GUID, never by
+   name.
 
 ---
 
-## Licence
+## License
 
-[Apache License 2.0 avec Commons Clause](LICENSE).
+[Apache License 2.0 with Commons Clause](LICENSE).
 
-Utilisation, modification, redistribution et fork **libres**, y compris en entreprise et pour un
-usage professionnel. La seule chose interdite est de **vendre** le logiciel au sens du Commons
-Clause : fournir à des tiers, contre rémunération, un produit ou un service dont la valeur dérive
-entièrement ou substantiellement de ses fonctionnalités — ce qui couvre la revente, l'hébergement
-payant et le support facturé sur cette base.
+Use, modification, redistribution and forking are **free**, including in companies and for
+professional use. The only thing forbidden is **selling** the software in the sense of the Commons
+Clause: providing third parties, for a fee, with a product or service whose value derives entirely
+or substantially from its functionality, which covers resale, paid hosting and paid support based
+on it.
 
-Cette combinaison n'est pas une licence open source au sens de l'OSI, restriction commerciale
-oblige. Pour un usage sortant de ce cadre, contactez le détenteur des droits.
+This combination is not an open-source license in the OSI sense, because of the commercial
+restriction. For use outside this scope, contact the copyright holder.

@@ -97,6 +97,9 @@ namespace ClaudeCodeVsMcp.Vs
                 _pending = null;
             }
 
+            // Fin du build MCP : les builds suivants (ceux de l'utilisateur) compilent toutes les cibles.
+            if (pending != null) SingleTargetBuild.End();
+
             pending?.TrySetResult(new BuildOutcome
             {
                 Succeeded = failed == 0,
@@ -115,6 +118,7 @@ namespace ClaudeCodeVsMcp.Vs
                 pending = _pending;
                 _pending = null;
             }
+            SingleTargetBuild.End();
             pending?.TrySetCanceled();
         }
 

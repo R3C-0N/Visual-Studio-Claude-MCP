@@ -1,5 +1,7 @@
 # Claude Code ↔ Visual Studio
 
+[English](README.md) · **Français**
+
 Pilotez Visual Studio depuis Claude Code : compiler, lire les erreurs, poser des points d'arrêt,
 dérouler le débogueur pas à pas et inspecter les variables — sans quitter votre terminal.
 
@@ -43,7 +45,9 @@ remplace.
 
 **1. Télécharger l'extension**
 
-Récupérez `ClaudeCodeVsMcp.vsix` depuis la
+Installez **Claude Code MCP Bridge** depuis le
+[Visual Studio Marketplace](https://marketplace.visualstudio.com/items?itemName=MMedard.claude-vs-mcp-bridge),
+ou récupérez `ClaudeCodeVsMcp.vsix` depuis la
 [dernière release](https://github.com/R3C-0N/Visual-Studio-Claude-MCP/releases/latest).
 
 **2. Installer**
@@ -97,6 +101,28 @@ C'est tout. Demandez à Claude de compiler votre solution pour valider.
 
 Les opérations longues — compilation, exécution — acceptent un `wait_ms`. Au-delà, la réponse porte
 le statut `running` : ce n'est pas une erreur mais un état à ré-interroger.
+
+### Une seule cible pour les projets multi-cibles
+
+Un build lancé par `build` ne compile qu'une cible (TargetFramework) des projets multi-cibles,
+par exemple `net10.0-windows10.0.19041.0` sans `net10.0-android`. Par défaut, c'est la cible active
+de l'IDE, choisie dans la liste déroulante de la barre d'outils. `set_configuration` permet de la
+changer pour la session :
+
+| `framework` | Effet |
+|---|---|
+| un TFM, ex. `net10.0-windows10.0.19041.0` | Seule cette cible est compilée, dans chaque projet qui la déclare |
+| `ide` | Retour à la cible active de l'IDE (comportement par défaut) |
+| `all` | Toutes les cibles, comme la commande *Générer* de Visual Studio |
+
+La réponse de `build` rappelle la cible dans son champ `framework`. Les projets qui ne déclarent pas
+cette cible, par exemple une bibliothèque `net8.0`, se compilent normalement. Rien n'est écrit sur
+disque : ni `.csproj`, ni `.csproj.user`, ni la liste déroulante de l'IDE. Les builds lancés à la main
+dans Visual Studio ne sont pas concernés.
+
+Visual Studio fait déjà la même chose avec F5, mais seulement pour le projet de démarrage. Le
+pont fournit au système de projet la propriété de build `TargetFramework` pendant ses propres builds,
+par le point d'extension public `ExportBuildGlobalPropertiesProvider`.
 
 `debug_stop` termine directement les processus débogués au lieu d'émettre la commande *Arrêter le
 débogage* de Visual Studio, qui ouvre selon le projet une confirmation modale. Passer
@@ -474,10 +500,14 @@ pwsh tools\Build.ps1              # compile, produit le .vsix
 pwsh tools\Build.ps1 -Install     # installe (Visual Studio fermé, terminal élevé)
 pwsh tools\Smoke-Test.ps1         # teste le serveur en HTTP brut, sans Claude Code
 pwsh tools\New-Release.ps1        # étiquette, pousse et publie une release
+pwsh tools\Publish-Marketplace.ps1  # publie le .vsix Release sur le Visual Studio Marketplace
 ```
 
 `F5` déploie dans la ruche expérimentale (`/rootsuffix Exp`) sans toucher à votre installation
 principale.
+
+La page du Marketplace affiche `src\ClaudeCodeVsMcp\marketplace-overview.md`, une présentation
+courte en anglais, et non ce README.
 
 **Hooks git** — à activer une fois par clone, `core.hooksPath` étant une configuration locale :
 

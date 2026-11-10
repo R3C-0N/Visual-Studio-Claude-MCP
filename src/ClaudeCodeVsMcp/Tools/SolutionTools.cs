@@ -124,16 +124,37 @@ namespace ClaudeCodeVsMcp.Tools
 
             registry.Add(
                 "set_configuration",
-                "Active une configuration de solution, par exemple 'Release' ou 'Debug|x64'. " +
-                "Appeler solution_info pour connaitre les valeurs disponibles.",
+                "Active une configuration de solution, par exemple 'Release' ou 'Debug|x64', et/ou fixe la " +
+                "cible (TargetFramework) des builds lances par le MCP pour les projets multi-cibles. " +
+                "Sans reglage, ces builds suivent la cible active de l'IDE (liste deroulante de la barre d'outils). " +
+                "Le reglage de cible reste en memoire : il ne modifie ni l'IDE ni aucun fichier. " +
+                "Appeler solution_info pour connaitre les configurations disponibles.",
                 SchemaBuilder.New()
                     .Instance()
-                    .Str("configuration", "Nom de la configuration, avec plateforme optionnelle apres '|'.", required: true)
+                    .Str("configuration", "Nom de la configuration, avec plateforme optionnelle apres '|'.")
+                    .Str("framework", "Cible des builds MCP : un TFM (ex. net10.0-windows10.0.19041.0), " +
+                                      "'ide' pour suivre la cible active de l'IDE, 'all' pour compiler toutes les cibles.")
                     .Build(),
-                (args, ctx, ct) => UiThread.RunAsync(() =>
+                (args, ctx, ct) => UiThread.RunAsync(async () =>
                 {
                     var solution = DteProvider.RequireSolution();
-                    var requested = Args.RequireStr(args, "configuration");
+                    var requested = Args.Str(args, "configuration");
+                    var framework = Args.Str(args, "framework");
+
+                    if (requested == null && framework == null)
+                    {
+                        throw McpToolException.InvalidArgs("Fournir 'configuration', 'framework', ou les deux.");
+                    }
+
+                    var response = new JObject();
+                    if (framework != null)
+                    {
+                        SingleTargetBuild.Session = framework;
+                        var choice = await SingleTargetBuild.ResolveAsync(solution);
+                        response["framework"] = BuildTools.DescribeTarget(choice);
+                    }
+
+                    if (requested == null) return response;
 
                     var builds = solution.SolutionBuild.SolutionConfigurations;
                     for (var i = 1; i <= builds.Count; i++)
@@ -146,7 +167,8 @@ namespace ClaudeCodeVsMcp.Tools
                             string.Equals(configuration.Name, requested, StringComparison.OrdinalIgnoreCase))
                         {
                             configuration.Activate();
-                            return new JObject { ["activeConfiguration"] = full };
+                            response["activeConfiguration"] = full;
+                            return response;
                         }
                     }
 

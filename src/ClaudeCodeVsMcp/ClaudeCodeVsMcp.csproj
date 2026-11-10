@@ -147,6 +147,13 @@
       <ExcludeAssets>runtime</ExcludeAssets>
       <IncludeInVSIX>false</IncludeInVSIX>
     </PackageReference>
+    <!-- Systeme de projet (CPS) : point d'extension public ExportBuildGlobalPropertiesProvider,
+         qui permet de passer TargetFramework a MSBuild pendant les builds lances par le MCP
+         (cible unique). L'assembly 17.0.0.0 est fournie par l'IDE : on n'embarque rien. -->
+    <PackageReference Include="Microsoft.VisualStudio.ProjectSystem" Version="17.9.380">
+      <ExcludeAssets>runtime</ExcludeAssets>
+      <IncludeInVSIX>false</IncludeInVSIX>
+    </PackageReference>
     <PackageReference Include="Newtonsoft.Json" Version="13.0.3">
       <ExcludeAssets>runtime</ExcludeAssets>
       <IncludeInVSIX>false</IncludeInVSIX>
